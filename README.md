@@ -1,4 +1,4 @@
-# 📸 Pro Image Collector (v7.1)
+# 📸 Pro Image Collector (v7.1) - Autor Pricop Bogdan - bogdan.pricop@gmail.com
 
 ![Version](https://img.shields.io/badge/version-7.1-blue)
 ![Chrome](https://img.shields.io/badge/browser-chrome-red)
@@ -7,7 +7,7 @@
 **Pro Image Collector** este o extensie Chrome avansată pentru extragerea, filtrarea și descărcarea imaginilor în masă. 
 Gândită pentru designeri, dezvoltatori și cercetare OSINT, această extensie merge dincolo de simpla descărcare, oferind instrumente de analiză (Google Lens, TinEye), conversie automată și organizare a fișierelor.
 
-![Screenshot Principal](assets/preview.png)
+![Screenshot Principal](preview.png)
 *(Notă: Adaugă o captură de ecran în folderul repository-ului și actualizează calea de mai sus)*
 
 ---
