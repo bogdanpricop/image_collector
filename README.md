@@ -8,7 +8,7 @@
 Gândită pentru designeri, dezvoltatori și cercetare OSINT, această extensie merge dincolo de simpla descărcare, oferind instrumente de analiză (Google Lens, TinEye), conversie automată și organizare a fișierelor.
 
 ![Screenshot Principal](preview.png)
-*(Notă: Adaugă o captură de ecran în folderul repository-ului și actualizează calea de mai sus)*
+*(Notă: doar main form)*
 
 ---
 
