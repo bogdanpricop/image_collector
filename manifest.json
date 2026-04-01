@@ -1,22 +1,20 @@
 {
   "manifest_version": 3,
   "name": "Pro Image Collector",
-  "version": "6.0",
-  "permissions": ["activeTab", "scripting", "tabs", "downloads"],
-  "host_permissions": ["<all_urls>"],
+  "version": "8.0",
+  "description": "Advanced image extraction, filtering, editing and bulk download tool for Chrome. Supports Google Lens, TinEye, WebP conversion, ZIP export, and image processing.",
+  "permissions": ["activeTab", "scripting", "downloads", "storage"],
   "action": {
     "default_popup": "popup.html",
-    "default_icon": "icon16.png"
+    "default_icon": {
+      "16": "icon16.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
+    }
   },
   "icons": {
     "16": "icon16.png",
     "48": "icon48.png",
     "128": "icon128.png"
-  },
-  "content_scripts": [
-    {
-      "matches": ["<all_urls>"],
-      "js": ["content.js"]
-    }
-  ]
+  }
 }
