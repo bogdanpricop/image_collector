@@ -34,10 +34,19 @@ select { padding: 4px 6px; border: 1px solid #ced4da; border-radius: 4px; font-s
 .type-check { font-size: 11px; display: flex; align-items: center; gap: 4px; cursor: pointer; font-weight: 500; text-transform: none; color: #333; }
 .type-check input { margin: 0; }
 
+/* Separators */
+.separator { color: #aaa; font-size: 11px; user-select: none; }
+
 /* Butoane */
 button { padding: 5px 12px; cursor: pointer; border: none; border-radius: 4px; font-size: 12px; font-weight: 600; transition: background 0.2s, transform 0.1s; white-space: nowrap; }
 button:active { transform: scale(0.97); }
 .btn-icon { padding: 4px 8px; font-size: 14px; line-height: 1; }
+
+/* Focus styles for keyboard navigation */
+button:focus-visible, input:focus-visible, select:focus-visible, .mini-btn:focus-visible, .tool-btn:focus-visible {
+  outline: 2px solid #0d6efd; outline-offset: 2px;
+}
+.mini-btn:focus-visible { outline-offset: 0; }
 
 .btn-primary { background-color: #0d6efd; color: white; }
 .btn-primary:hover { background-color: #0b5ed7; }
@@ -208,8 +217,9 @@ li.selected .selection-overlay { display: flex; }
 .tool-btn.danger:hover { background: #bb2d3b; }
 
 #processStatus { color: #aaa; font-size: 11px; text-align: center; height: 15px; margin-bottom: 5px; }
-#closeModal { position: absolute; top: 15px; right: 20px; font-size: 30px; color: #888; cursor: pointer; z-index: 210; }
+#closeModal { position: absolute; top: 15px; right: 20px; font-size: 30px; color: #888; cursor: pointer; z-index: 210; background: none; border: none; padding: 5px 10px; }
 #closeModal:hover { color: #fff; }
+#closeModal:focus-visible { outline: 2px solid #0d6efd; outline-offset: 2px; }
 
 /* Undo counter badge */
 #undoCount {

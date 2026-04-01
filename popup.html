@@ -15,13 +15,13 @@
         <button id="rescanBtn" class="btn-outline btn-icon" title="Rescan page for new images">&#8635;</button>
       </div>
       <div class="flex-group">
-        <label style="color:#aaa;">|</label>
+        <span class="separator" aria-hidden="true">|</span>
         <label class="type-check"><input type="checkbox" checked value="jpg"> JPG</label>
         <label class="type-check"><input type="checkbox" checked value="png"> PNG</label>
         <label class="type-check"><input type="checkbox" checked value="webp"> WebP</label>
         <label class="type-check"><input type="checkbox" checked value="svg"> SVG</label>
         <label class="type-check"><input type="checkbox" checked value="gif"> GIF</label>
-        <label style="color:#aaa;">|</label>
+        <span class="separator" aria-hidden="true">|</span>
         <label class="type-check" style="color:#d63384; font-weight:700;"><input type="checkbox" id="convertWebp"> WebP2PNG</label>
       </div>
     </div>
@@ -46,7 +46,7 @@
     <div class="row" style="margin-top: 10px; border-top: 1px solid #eee; padding-top: 8px;">
       <div id="status">Scanning...</div>
       <div class="flex-group">
-        <label title="Grid columns"><input type="range" id="gridSlider" min="3" max="8" value="5"></label>
+        <label title="Grid columns" aria-label="Grid columns"><input type="range" id="gridSlider" min="3" max="8" value="5" aria-label="Grid columns"></label>
         <label class="type-check" style="color:#6f42c1; font-weight:700;" title="Download all selected as a single ZIP file">
           <input type="checkbox" id="zipMode"> ZIP
         </label>
@@ -87,10 +87,10 @@
 
   <!-- Modal Image Editor -->
   <div id="imageModal">
-    <div id="closeModal">&times;</div>
+    <button id="closeModal" aria-label="Close editor">&times;</button>
 
     <div id="modalImgContainer">
-      <img id="modalImg" src="">
+      <img id="modalImg" src="" alt="Image being edited">
     </div>
 
     <div id="processStatus">Ready to edit</div>

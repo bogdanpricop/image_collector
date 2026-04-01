@@ -296,8 +296,7 @@ document.addEventListener('DOMContentLoaded', () => {
       await applyOperation('recompress', { quality: 75 }, false);
       setStatus("Cascade Complete! Image is clean.", "#198754");
     } catch (e) {
-      console.error(e);
-      setStatus("Error in cascade.", "red");
+      setStatus("Error in cascade: " + (e.message || "Unknown error"), "red");
     }
   });
 
@@ -743,7 +742,11 @@ document.addEventListener('DOMContentLoaded', () => {
     btn.className = 'mini-btn';
     btn.textContent = iconChar;
     btn.title = titleText;
+    btn.setAttribute('role', 'button');
+    btn.setAttribute('tabindex', '0');
+    btn.setAttribute('aria-label', titleText);
     btn.addEventListener('click', handler);
+    btn.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handler(e); } });
     return btn;
   }
 
@@ -876,7 +879,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const dataUrl = await loadImageAsDataUrl(url);
                 imageData = dataUrl.split(',')[1];
               } catch (canvasErr) {
-                console.warn(`Skipping image ${idx} (CORS blocked):`, url);
+                // CORS blocked — skip this image
                 continue;
               }
             }
@@ -901,7 +904,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         updateProgress(idx, urlsArray.length, 'Fetching');
       } catch (e) {
-        console.warn(`Failed to fetch image ${idx}:`, e);
+        // Skip failed images silently
       }
       idx++;
     }
@@ -932,8 +935,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       notify(`ZIP created with ${urlsArray.length} images!`, '');
     } catch (e) {
-      console.error('ZIP creation failed:', e);
-      notify('Failed to create ZIP file.', 'error');
+      notify('Failed to create ZIP file: ' + (e.message || 'Unknown error'), 'error');
     }
   }
 
