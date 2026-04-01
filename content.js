@@ -99,12 +99,25 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   return true; // Keep channel open for async
 });
 
-// MutationObserver - detectează imagini noi adăugate dinamic
+// MutationObserver - detectează imagini noi adăugate dinamic (filtrat doar pentru imagini)
 let mutationTimeout = null;
-const observer = new MutationObserver(() => {
+const observer = new MutationObserver((mutations) => {
+  let hasNewImages = false;
+  for (const mutation of mutations) {
+    for (const node of mutation.addedNodes) {
+      if (node.nodeType !== 1) continue;
+      if (node.tagName === 'IMG' || node.tagName === 'VIDEO' ||
+          (node.querySelector && (node.querySelector('img') || node.querySelector('video[poster]')))) {
+        hasNewImages = true;
+        break;
+      }
+    }
+    if (hasNewImages) break;
+  }
+  if (!hasNewImages) return;
+
   clearTimeout(mutationTimeout);
   mutationTimeout = setTimeout(() => {
-    // Notifică popup-ul că sunt imagini noi
     try {
       chrome.runtime.sendMessage({ action: "newImagesDetected" });
     } catch (e) { /* popup may be closed */ }

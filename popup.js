@@ -11,10 +11,10 @@ let originalImageSrc = null;
 let currentImageSrc = null; // track which image is being edited
 let currentCanvas = null;
 let currentCtx = null;
-let currentRotation = 0;
 let pendingOperation = null;
 let undoStack = [];
 const MAX_UNDO = 20;
+const MAX_UNDO_BYTES = 200 * 1024 * 1024; // 200MB max undo memory
 
 // Drag select state
 let isDragging = false;
@@ -372,9 +372,16 @@ document.addEventListener('DOMContentLoaded', () => {
   // --- Undo ---
   function pushUndo() {
     if (!currentCanvas) return;
-    if (undoStack.length >= MAX_UNDO) undoStack.shift();
-    // Save canvas state as ImageData
     const data = currentCtx.getImageData(0, 0, currentCanvas.width, currentCanvas.height);
+    const entryBytes = data.data.byteLength;
+    // Trim by count
+    if (undoStack.length >= MAX_UNDO) undoStack.shift();
+    // Trim by total memory
+    let totalBytes = undoStack.reduce((sum, s) => sum + s.data.data.byteLength, 0);
+    while (totalBytes + entryBytes > MAX_UNDO_BYTES && undoStack.length > 0) {
+      const removed = undoStack.shift();
+      totalBytes -= removed.data.data.byteLength;
+    }
     undoStack.push({ data, width: currentCanvas.width, height: currentCanvas.height });
     updateUndoCount();
   }
@@ -657,45 +664,43 @@ document.addEventListener('DOMContentLoaded', () => {
       if (selectedImages.has(img.src)) li.classList.add('selected');
 
       const extDisplay = getFileExtension(img.src);
-      const safeSrc = escapeHtml(img.src);
-      const safeLink = img.link ? escapeHtml(img.link) : '';
 
       // Build action bar
       const actionBar = document.createElement('div');
       actionBar.className = 'action-bar';
 
       // View button
-      const viewBtn = createMiniBtn('&#128065;', 'Open full image in new tab', (e) => {
+      const viewBtn = createMiniBtn('\uD83D\uDC41', 'Open full image in new tab', (e) => {
         e.stopPropagation(); chrome.tabs.create({ url: img.src });
       });
 
       // Link button
-      const linkBtn = createMiniBtn('&#128279;', img.link ? 'Open linked page' : 'No link available', (e) => {
+      const linkBtn = createMiniBtn('\uD83D\uDD17', img.link ? 'Open linked page' : 'No link available', (e) => {
         e.stopPropagation();
         if (img.link) chrome.tabs.create({ url: img.link });
       });
       if (!img.link) linkBtn.classList.add('disabled');
 
       // Lens button
-      const lensBtn = createMiniBtn('&#128247;', 'Search with Google Lens', (e) => {
+      const lensBtn = createMiniBtn('\uD83D\uDCF7', 'Search with Google Lens', (e) => {
         e.stopPropagation();
         chrome.tabs.create({ url: 'https://lens.google.com/uploadbyurl?url=' + encodeURIComponent(img.src) });
       });
 
       // TinEye button
-      const tineyeBtn = createMiniBtn('&#128064;', 'Search with TinEye', (e) => {
+      const tineyeBtn = createMiniBtn('\uD83D\uDC40', 'Search with TinEye', (e) => {
         e.stopPropagation();
         chrome.tabs.create({ url: 'https://tineye.com/search?url=' + encodeURIComponent(img.src) });
       });
 
       // Copy URL button
-      const copyBtn = createMiniBtn('&#128203;', 'Copy image URL', (e) => {
+      const copyBtn = createMiniBtn('\uD83D\uDCCB', 'Copy image URL', (e) => {
         e.stopPropagation();
         navigator.clipboard.writeText(img.src).then(() => notify("URL copied!", "info"));
       });
 
       // Editor button
-      const editorBtn = createMiniBtn('&#128444;', 'Open in image editor', (e) => {
+      const editorBtn = createMiniBtn('\uD83D\uDDBC', 'Open in image editor', (e) => {
         e.stopPropagation(); openModal(img.src);
       });
 
@@ -740,10 +745,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  function createMiniBtn(iconHtml, titleText, handler) {
+  function createMiniBtn(iconChar, titleText, handler) {
     const btn = document.createElement('div');
     btn.className = 'mini-btn';
-    btn.innerHTML = iconHtml;
+    btn.textContent = iconChar;
     btn.title = titleText;
     btn.addEventListener('click', handler);
     return btn;
@@ -868,9 +873,20 @@ document.addEventListener('DOMContentLoaded', () => {
               imageData = blob;
             }
           } else {
-            const resp = await fetch(url);
-            const blob = await resp.blob();
-            imageData = blob;
+            try {
+              const resp = await fetch(url);
+              const blob = await resp.blob();
+              imageData = blob;
+            } catch (fetchErr) {
+              // CORS blocked — fallback: load via canvas
+              try {
+                const dataUrl = await loadImageAsDataUrl(url);
+                imageData = dataUrl.split(',')[1];
+              } catch (canvasErr) {
+                console.warn(`Skipping image ${idx} (CORS blocked):`, url);
+                continue;
+              }
+            }
           }
         }
 
@@ -916,6 +932,9 @@ document.addEventListener('DOMContentLoaded', () => {
         url: zipUrl,
         filename: zipName,
         conflictAction: 'uniquify'
+      }, () => {
+        // Revoke blob URL after download starts to free memory
+        setTimeout(() => URL.revokeObjectURL(zipUrl), 5000);
       });
 
       notify(`ZIP created with ${urlsArray.length} images!`, '');
@@ -923,6 +942,21 @@ document.addEventListener('DOMContentLoaded', () => {
       console.error('ZIP creation failed:', e);
       notify('Failed to create ZIP file.', 'error');
     }
+  }
+
+  function loadImageAsDataUrl(url) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = "Anonymous";
+      img.onload = () => {
+        const c = document.getElementById('conversionCanvas');
+        c.width = img.width; c.height = img.height;
+        c.getContext('2d').drawImage(img, 0, 0);
+        resolve(c.toDataURL('image/png'));
+      };
+      img.onerror = reject;
+      img.src = url;
+    });
   }
 
   function convertWebPtoPNG(url) {
