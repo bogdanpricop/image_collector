@@ -340,13 +340,6 @@ document.addEventListener('DOMContentLoaded', () => {
     setTimeout(() => el.classList.remove('show'), 3000);
   }
 
-  // --- XSS-safe text escaping ---
-  function escapeHtml(str) {
-    const div = document.createElement('div');
-    div.appendChild(document.createTextNode(str));
-    return div.innerHTML;
-  }
-
   // --- Tool UI ---
   function showToolUI(opName, labelText, defaultVal, unitText) {
     pendingOperation = opName;
@@ -563,7 +556,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function scanPage() {
     statusDiv.textContent = 'Scanning...';
-    imageList.innerHTML = '';
+    imageList.replaceChildren();
     emptyState.style.display = 'none';
     allImages = [];
     selectedImages.clear();
@@ -634,7 +627,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function renderImages() {
-    imageList.innerHTML = '';
+    imageList.replaceChildren();
     const filters = getActiveFilters();
 
     const filtered = allImages.filter(img => {
