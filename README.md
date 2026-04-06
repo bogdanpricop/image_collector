@@ -1,179 +1,327 @@
-# 📸 Pro Image Collector (v8.0) - Autor Pricop Bogdan - bogdan.pricop@gmail.com
+# Pro Image Collector (v8.0)
+
+**Author:** Pricop Bogdan — bogdan.pricop@gmail.com
 
 ![Version](https://img.shields.io/badge/version-8.0-blue)
 ![Chrome](https://img.shields.io/badge/browser-chrome-red)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-**Pro Image Collector** este o extensie Chrome avansată pentru extragerea, filtrarea, editarea și descărcarea imaginilor în masă.
-Gândită pentru designeri, dezvoltatori și cercetare OSINT, această extensie merge dincolo de simpla descărcare, oferind instrumente de analiză (Google Lens, TinEye), editor de imagini complet, descărcare ZIP, conversie automată și organizare a fișierelor.
+**Pro Image Collector** is an advanced Chrome extension for extracting, filtering, editing, and bulk-downloading images from any webpage.
+Built for designers, developers, and OSINT researchers, it goes beyond simple downloading — offering analysis tools (Google Lens, TinEye), a full image editor, ZIP export, automatic conversion, and file organization.
 
-![Screenshot Principal](preview.png)
-*(Notă: doar main form)*
+![Main Screenshot](preview.png)
+*(Note: main form only)*
 
 ---
 
-## ✨ Funcționalități Cheie
+## Features
 
-### 📥 Extragere Puternică
-* **Deep Scan:** Detectează imagini standard `<img>`, imagini de fundal CSS (`background-image`), `srcset` și `<video poster>`.
-* **Lazy Loading & Dynamic Content:** MutationObserver detectează automat imagini noi adăugate dinamic pe pagină.
-* **Smart Linking:** Detectează dacă o imagine este un link către un produs/articol și oferă un buton dedicat pentru navigare.
+### Powerful Extraction
+* **Deep Scan:** Detects standard `<img>` tags, CSS background images (`background-image`), `srcset` attributes, and `<video poster>`.
+* **Lazy Loading & Dynamic Content:** A MutationObserver automatically detects new images added dynamically to the page.
+* **Smart Linking:** Detects whether an image is a link to a product/article page and provides a dedicated navigation button.
 
-### 🔍 Analiză & OSINT (Open Source Intelligence)
-* **📷 Google Lens Integration:** Căutare vizuală inversă direct din popup pentru a găsi produse similare sau traduceri.
-* **👁️ TinEye Integration:** Verifică sursa originală a imaginii sau drepturile de autor.
-* **🔎 Smart Filters:** Filtrare avansată după dimensiuni (lățime/înălțime), tip fișier (JPG, PNG, WebP, SVG, GIF) și text (căutare în URL sau atributul `alt`).
+### Analysis & OSINT (Open Source Intelligence)
+* **Google Lens Integration:** Reverse visual search directly from the popup to find similar products or translations.
+* **TinEye Integration:** Verify the original source of an image or check copyright.
+* **Smart Filters:** Advanced filtering by dimensions (width/height), file type (JPG, PNG, WebP, SVG, GIF), and text (search in URL or `alt` attribute).
 
-### 🎨 Editor de Imagini Integrat
-* **Crop:** Decupare procentuală a marginilor.
-* **Resize:** Scalare la orice procent.
-* **Flip & Rotate:** Oglindire orizontală și rotire 90° (se aplică real pe canvas, nu doar vizual).
-* **Noise:** Adaugă grain/zgomot aleatoriu.
-* **Color Shift:** Modifică nuanța și saturația.
-* **Obfuscate:** Blur subtil + sharpen pentru alterarea pixelilor.
-* **Re-JPEG:** Recompresie JPEG la calitate configurabilă.
-* **⚡ Magic Cascade:** Un singur click aplică toate transformările în secvență.
-* **Undo/Redo:** Stack de până la 20 stări (Ctrl+Z).
-* **Export Format:** Alege între PNG, JPG sau WebP la descărcare.
+### Built-in Image Editor
+* **Crop:** Percentage-based edge cropping.
+* **Resize:** Scale to any percentage.
+* **Flip & Rotate:** Horizontal mirror and 90° rotation (applied to the actual canvas, not just CSS).
+* **Noise:** Add random grain/noise.
+* **Color Shift:** Adjust hue and saturation.
+* **Obfuscate:** Subtle blur + sharpen to alter pixel data.
+* **Re-JPEG:** JPEG recompression at configurable quality.
+* **Magic Cascade:** One click applies all transformations in sequence.
+* **Undo/Redo:** Stack of up to 20 states (Ctrl+Z).
+* **Export Format:** Choose between PNG, JPG, or WebP for download.
 
-### 📦 Descărcare Flexibilă
-* **Download Individual:** Descarcă fiecare imagine separat (modul clasic).
-* **Download ZIP:** Bifează "ZIP" pentru a descărca toate imaginile selectate într-un singur fișier `.zip`.
-* **WebP to PNG Converter:** Conversie automată la descărcare pentru compatibilitate maximă.
-* **Organizare:** Salvare în sub-foldere dedicate și redenumire automată a fișierelor (ex: `Vacanta_001.jpg`).
-* **Progress Bar:** Bară de progres reală cu contor la descărcare.
+### Flexible Download
+* **Individual Download:** Download each image separately (classic mode).
+* **ZIP Download:** Check "ZIP" to download all selected images in a single `.zip` file.
+* **WebP to PNG Converter:** Automatic conversion on download for maximum compatibility.
+* **Organization:** Save to dedicated subfolders and auto-rename files (e.g., `Vacation_001.jpg`).
+* **Progress Bar:** Real-time progress bar with counter during download.
 
-### ⌨️ Productivitate
-* **Drag Select:** Trage mouse-ul peste grid pentru selecție rapidă (Ctrl+drag = toggle).
+### Productivity
+* **Drag Select:** Drag the mouse over the grid for quick selection (Ctrl+drag = toggle).
 * **Keyboard Shortcuts:** `Ctrl+A` select all, `Ctrl+D` download, `Ctrl+Z` undo, `Esc` close editor.
-* **Copy URL:** Copiază URL-ul imaginii în clipboard dintr-un singur click.
-* **Grid Slider:** Ajustează numărul de coloane (3-8) din grid.
-* **Setări Persistente:** Filtrele și preferințele se salvează automat între sesiuni.
+* **Copy URL:** Copy an image URL to clipboard with a single click.
+* **Grid Slider:** Adjust the number of columns (3–8) in the grid.
+* **Persistent Settings:** Filters and preferences are saved automatically between sessions.
 
-### 🎨 Interfață Compactă
-* Design optimizat pentru lățimea maximă permisă de Chrome (800px).
-* Bară de acțiuni rapidă (Action Bar) pe fiecare thumbnail cu tooltips.
-* Bară de status în timp real (Found | Shown | Selected).
-* Empty state cu mesaj informativ când nu sunt imagini.
+### Compact Interface
+* Optimized design for Chrome's maximum allowed popup width (800px).
+* Quick action bar on each thumbnail with tooltips.
+* Real-time status bar (Found | Shown | Selected).
+* Informative empty state when no images are found.
+* Full keyboard accessibility with focus-visible styles.
 
 ---
 
-## 🚀 Instalare
+## Installation
 
-### Din Chrome Web Store
-1. Mergi la pagina extensiei pe Chrome Web Store.
-2. Apasă **"Add to Chrome"**.
-3. Gata!
+### From Chrome Web Store
+1. Go to the extension page on the Chrome Web Store.
+2. Click **"Add to Chrome"**.
+3. Done!
 
 ### Developer Mode (Sideload)
-1.  **Descarcă codul:** Clonează acest repository sau descarcă arhiva ZIP și dezarhiveaz-o.
-2.  **Deschide Chrome:** Mergi la adresa `chrome://extensions/`.
-3.  **Activează Developer Mode:** Bifează comutatorul din colțul dreapta-sus ("Developer mode").
-4.  **Încarcă extensia:**
-    * Apasă butonul **"Load unpacked"** (Încarcă extensia neîmpachetată).
-    * Selectează folderul unde ai fișierele (`manifest.json`, `popup.html`, etc.).
-5.  Gata! Extensia ar trebui să apară în bara ta de instrumente.
+1. **Download the code:** Clone this repository or download the ZIP archive and extract it.
+2. **Open Chrome:** Navigate to `chrome://extensions/`.
+3. **Enable Developer Mode:** Toggle the switch in the top-right corner.
+4. **Load the extension:**
+   * Click **"Load unpacked"**.
+   * Select the folder containing the files (`manifest.json`, `popup.html`, etc.).
+5. Done! The extension should appear in your toolbar.
 
 ---
 
-## 📖 Ghid de Utilizare
+## Usage Guide
 
-### 1. Bara de Control (Sus)
-* **Min Size:** Setează dimensiunile minime pentru a exclude iconițele mici (ex: 50x50).
-* **Tipuri:** Bifează ce formate vrei să vezi (JPG, PNG, WebP, SVG, GIF).
-* **WebP2PNG:** Bifează pentru a converti automat imaginile `.webp` în `.png` la descărcare.
-* **Rescan (↻):** Apasă dacă ai dat scroll pe o pagină dinamică (ex: Instagram) pentru a găsi imagini noi.
+### 1. Control Bar (Top)
+* **Min Size:** Set minimum dimensions to exclude small icons (e.g., 50x50).
+* **Types:** Check which formats you want to see (JPG, PNG, WebP, SVG, GIF).
+* **WebP2PNG:** Check to automatically convert `.webp` images to `.png` on download.
+* **Rescan (↻):** Press if you've scrolled on a dynamic page (e.g., Instagram) to find new images.
 
-### 2. Filtrare & Organizare (Mijloc)
-* **Filter:** Scrie un cuvânt (ex: "pantof") pentru a afișa doar imaginile care conțin acel text în nume sau descriere.
-* **Folder:** Scrie numele folderului (ex: `Proiecte/Design`) unde vrei să se salveze imaginile în Downloads.
-* **Rename:** Prefix pentru fișiere (ex: `img` va genera `img_001.jpg`, `img_002.jpg`).
+### 2. Filtering & Organization (Middle)
+* **Filter:** Type a keyword (e.g., "shoe") to show only images containing that text in their name or description.
+* **Folder:** Enter a folder name (e.g., `Projects/Design`) where images will be saved in Downloads.
+* **Rename:** File prefix (e.g., `img` will generate `img_001.jpg`, `img_002.jpg`).
 
-### 3. Opțiuni de Descărcare
-* **Grid Slider:** Glisează pentru a ajusta numărul de coloane (3-8).
-* **ZIP:** Bifează pentru a descărca toate imaginile selectate ca un singur fișier ZIP.
-* **Export Format:** Alege formatul de export pentru imaginile editate (PNG/JPG/WebP).
+### 3. Download Options
+* **Grid Slider:** Slide to adjust the number of columns (3–8).
+* **ZIP:** Check to download all selected images as a single ZIP file.
+* **Export Format:** Choose the export format for edited images (PNG/JPG/WebP).
 
-### 4. Acțiuni pe Imagine (Hover)
-Când treci cu mouse-ul peste o imagine, apare bara de acțiuni:
-* 👁️ **View:** Deschide imaginea în tab nou.
-* 🔗 **Link:** Merge la pagina produsului (dacă există link).
-* 📷 **Lens:** Caută cu Google Lens.
-* 👁️ **TinEye:** Caută cu TinEye.
-* 📋 **Copy URL:** Copiază URL-ul imaginii.
-* 🖼️ **Editor:** Deschide editorul de imagini.
+### 4. Image Actions (Hover)
+Hover over an image to reveal the action bar:
+* **View:** Open full image in a new tab.
+* **Link:** Go to the product page (if a link exists).
+* **Lens:** Search with Google Lens.
+* **TinEye:** Search with TinEye.
+* **Copy URL:** Copy the image URL to clipboard.
+* **Editor:** Open the image editor.
 
-### 5. Scurtături de Tastatură
-| Scurtătură | Acțiune |
+### 5. Keyboard Shortcuts
+
+| Shortcut | Action |
 |---|---|
-| `Ctrl+A` | Selectează / Deselectează toate imaginile vizibile |
-| `Ctrl+D` | Descarcă imaginile selectate |
-| `Ctrl+Z` | Undo în editor |
-| `Esc` | Închide editorul |
+| `Ctrl+A` | Select / Deselect all visible images |
+| `Ctrl+D` | Download selected images |
+| `Ctrl+Z` | Undo in editor |
+| `Esc` | Close editor |
 
 ---
 
-## 📂 Structura Proiectului
+## Project Structure
 
 ```text
 /
-├── manifest.json          # Configurația extensiei (Manifest V3)
-├── popup.html             # Interfața utilizator (UI)
-├── popup.css              # Stiluri CSS (extras separat)
-├── popup.js               # Logica principală (Filtrare, Download, Editor, ZIP)
-├── content.js             # Script injectat pentru extragerea DOM + MutationObserver
-├── jszip.min.js           # Biblioteca JSZip pentru descărcare ZIP
-├── PRIVACY.md             # Politica de confidențialitate
-├── store-description.txt  # Descriere pentru Chrome Web Store
-├── icon16.png             # Iconiță 16x16
-├── icon48.png             # Iconiță 48x48
-└── icon128.png            # Iconiță 128x128
+├── manifest.json          # Extension configuration (Manifest V3)
+├── popup.html             # User interface (UI)
+├── popup.css              # Styles (extracted separately)
+├── popup.js               # Main logic (filtering, download, editor, ZIP)
+├── content.js             # Injected script for DOM extraction + MutationObserver
+├── utils.js               # Pure utility functions (testable)
+├── jszip.min.js           # JSZip library for ZIP downloads
+├── PRIVACY.md             # Privacy policy
+├── store-description.txt  # Chrome Web Store description
+├── icon16.png             # Icon 16x16
+├── icon48.png             # Icon 48x48
+└── icon128.png            # Icon 128x128
 ```
 
 ---
 
-## 🔒 Permisiuni
+## Permissions
 
-| Permisiune | De ce e necesară |
+| Permission | Why it's needed |
 |---|---|
-| `activeTab` | Scanează tab-ul curent pentru imagini |
-| `scripting` | Injectează content script-ul de extragere |
-| `downloads` | Salvează imaginile pe calculator |
-| `storage` | Persistă preferințele utilizatorului local |
+| `activeTab` | Scan the current tab for images |
+| `scripting` | Inject the extraction content script |
+| `downloads` | Save images to your computer |
+| `storage` | Persist user preferences locally |
 
-Extensia **NU** colectează, transmite sau stochează date personale. Toate operațiunile au loc local în browser. Vezi [PRIVACY.md](PRIVACY.md) pentru detalii.
+This extension does **NOT** collect, transmit, or store any personal data. All processing happens locally in your browser. See [PRIVACY.md](PRIVACY.md) for details.
 
 ---
 
-## 📋 Changelog
+## Changelog
 
 ### v8.0 (2026-04-01)
-* **Rewrite major** cu fix-uri de securitate și funcționalități noi
-* Fix deduplicate imagini (Set → Map)
-* Fix vulnerabilitate XSS (construire DOM programatică)
-* Fix rotire reală pe canvas (nu doar CSS)
-* Fix selectAll respectă toate filtrele
-* Adăugat descărcare ZIP (JSZip)
-* Adăugat drag-to-select pe grid
-* Adăugat MutationObserver pentru pagini dinamice
-* Adăugat setări persistente (chrome.storage)
-* Adăugat keyboard shortcuts (Ctrl+A/D/Z, Esc)
-* Adăugat undo/redo în editor (20 stări)
-* Adăugat copy URL, export format, grid slider
-* Adăugat progress bar la descărcare
-* Adăugat empty state, tooltips
-* Extras CSS în fișier separat
-* Eliminat `host_permissions` (securitate îmbunătățită)
-* Suport srcset, video poster, GIF
+* **Major rewrite** with security fixes and new features
+* Fix image deduplication (Set → Map)
+* Fix XSS vulnerability (programmatic DOM construction)
+* Fix real canvas rotation (not just CSS)
+* Fix selectAll now respects all active filters
+* Added ZIP download (JSZip)
+* Added drag-to-select on grid
+* Added MutationObserver for dynamic pages
+* Added persistent settings (chrome.storage)
+* Added keyboard shortcuts (Ctrl+A/D/Z, Esc)
+* Added undo/redo in editor (20 states)
+* Added copy URL, export format, grid slider
+* Added download progress bar
+* Added empty state, tooltips, accessibility (ARIA, focus styles)
+* Extracted CSS into separate file
+* Added explicit Content Security Policy
+* Removed `host_permissions` (improved security)
+* Support for srcset, video poster, GIF
 
 ### v7.1
-* Editor de imagini cu Crop, Resize, Flip, Noise, Color, Obfuscate, Re-JPEG
+* Image editor with Crop, Resize, Flip, Noise, Color, Obfuscate, Re-JPEG
 * Magic Cascade
 * Google Lens & TinEye integration
 * WebP to PNG conversion
 
 ---
 
-## 📄 Licență
+## License
 
-MIT License - vezi fișierul LICENSE pentru detalii.
+MIT License — see the LICENSE file for details.
+
+---
+
+---
+
+# README — Versiunea in limba romana
+
+# Pro Image Collector (v8.0)
+
+**Autor:** Pricop Bogdan — bogdan.pricop@gmail.com
+
+![Version](https://img.shields.io/badge/version-8.0-blue)
+![Chrome](https://img.shields.io/badge/browser-chrome-red)
+![License](https://img.shields.io/badge/license-MIT-green)
+
+**Pro Image Collector** este o extensie Chrome avansata pentru extragerea, filtrarea, editarea si descarcarea imaginilor in masa.
+Gandita pentru designeri, dezvoltatori si cercetare OSINT, aceasta extensie merge dincolo de simpla descarcare, oferind instrumente de analiza (Google Lens, TinEye), editor de imagini complet, descarcare ZIP, conversie automata si organizare a fisierelor.
+
+![Screenshot Principal](preview.png)
+*(Nota: doar main form)*
+
+---
+
+## Functionalitati Cheie
+
+### Extragere Puternica
+* **Deep Scan:** Detecteaza imagini standard `<img>`, imagini de fundal CSS (`background-image`), `srcset` si `<video poster>`.
+* **Lazy Loading & Dynamic Content:** MutationObserver detecteaza automat imagini noi adaugate dinamic pe pagina.
+* **Smart Linking:** Detecteaza daca o imagine este un link catre un produs/articol si ofera un buton dedicat pentru navigare.
+
+### Analiza & OSINT (Open Source Intelligence)
+* **Google Lens Integration:** Cautare vizuala inversa direct din popup pentru a gasi produse similare sau traduceri.
+* **TinEye Integration:** Verifica sursa originala a imaginii sau drepturile de autor.
+* **Smart Filters:** Filtrare avansata dupa dimensiuni (latime/inaltime), tip fisier (JPG, PNG, WebP, SVG, GIF) si text (cautare in URL sau atributul `alt`).
+
+### Editor de Imagini Integrat
+* **Crop:** Decupare procentuala a marginilor.
+* **Resize:** Scalare la orice procent.
+* **Flip & Rotate:** Oglindire orizontala si rotire 90° (se aplica real pe canvas, nu doar vizual).
+* **Noise:** Adauga grain/zgomot aleatoriu.
+* **Color Shift:** Modifica nuanta si saturatia.
+* **Obfuscate:** Blur subtil + sharpen pentru alterarea pixelilor.
+* **Re-JPEG:** Recompresie JPEG la calitate configurabila.
+* **Magic Cascade:** Un singur click aplica toate transformarile in secventa.
+* **Undo/Redo:** Stack de pana la 20 stari (Ctrl+Z).
+* **Export Format:** Alege intre PNG, JPG sau WebP la descarcare.
+
+### Descarcare Flexibila
+* **Download Individual:** Descarca fiecare imagine separat (modul clasic).
+* **Download ZIP:** Bifeaza "ZIP" pentru a descarca toate imaginile selectate intr-un singur fisier `.zip`.
+* **WebP to PNG Converter:** Conversie automata la descarcare pentru compatibilitate maxima.
+* **Organizare:** Salvare in sub-foldere dedicate si redenumire automata a fisierelor (ex: `Vacanta_001.jpg`).
+* **Progress Bar:** Bara de progres reala cu contor la descarcare.
+
+### Productivitate
+* **Drag Select:** Trage mouse-ul peste grid pentru selectie rapida (Ctrl+drag = toggle).
+* **Keyboard Shortcuts:** `Ctrl+A` select all, `Ctrl+D` download, `Ctrl+Z` undo, `Esc` close editor.
+* **Copy URL:** Copiaza URL-ul imaginii in clipboard dintr-un singur click.
+* **Grid Slider:** Ajusteaza numarul de coloane (3-8) din grid.
+* **Setari Persistente:** Filtrele si preferintele se salveaza automat intre sesiuni.
+
+### Interfata Compacta
+* Design optimizat pentru latimea maxima permisa de Chrome (800px).
+* Bara de actiuni rapida (Action Bar) pe fiecare thumbnail cu tooltips.
+* Bara de status in timp real (Found | Shown | Selected).
+* Empty state cu mesaj informativ cand nu sunt imagini.
+* Accesibilitate completa cu stiluri focus-visible si atribute ARIA.
+
+---
+
+## Instalare
+
+### Din Chrome Web Store
+1. Mergi la pagina extensiei pe Chrome Web Store.
+2. Apasa **"Add to Chrome"**.
+3. Gata!
+
+### Developer Mode (Sideload)
+1. **Descarca codul:** Cloneaza acest repository sau descarca arhiva ZIP si dezarhiveaz-o.
+2. **Deschide Chrome:** Mergi la adresa `chrome://extensions/`.
+3. **Activeaza Developer Mode:** Bifeaza comutatorul din coltul dreapta-sus ("Developer mode").
+4. **Incarca extensia:**
+   * Apasa butonul **"Load unpacked"**.
+   * Selecteaza folderul unde ai fisierele (`manifest.json`, `popup.html`, etc.).
+5. Gata! Extensia ar trebui sa apara in bara ta de instrumente.
+
+---
+
+## Ghid de Utilizare
+
+### 1. Bara de Control (Sus)
+* **Min Size:** Seteaza dimensiunile minime pentru a exclude iconitele mici (ex: 50x50).
+* **Tipuri:** Bifeaza ce formate vrei sa vezi (JPG, PNG, WebP, SVG, GIF).
+* **WebP2PNG:** Bifeaza pentru a converti automat imaginile `.webp` in `.png` la descarcare.
+* **Rescan:** Apasa daca ai dat scroll pe o pagina dinamica (ex: Instagram) pentru a gasi imagini noi.
+
+### 2. Filtrare & Organizare (Mijloc)
+* **Filter:** Scrie un cuvant (ex: "pantof") pentru a afisa doar imaginile care contin acel text in nume sau descriere.
+* **Folder:** Scrie numele folderului (ex: `Proiecte/Design`) unde vrei sa se salveze imaginile in Downloads.
+* **Rename:** Prefix pentru fisiere (ex: `img` va genera `img_001.jpg`, `img_002.jpg`).
+
+### 3. Optiuni de Descarcare
+* **Grid Slider:** Gliseaza pentru a ajusta numarul de coloane (3-8).
+* **ZIP:** Bifeaza pentru a descarca toate imaginile selectate ca un singur fisier ZIP.
+* **Export Format:** Alege formatul de export pentru imaginile editate (PNG/JPG/WebP).
+
+### 4. Actiuni pe Imagine (Hover)
+Cand treci cu mouse-ul peste o imagine, apare bara de actiuni:
+* **View:** Deschide imaginea in tab nou.
+* **Link:** Merge la pagina produsului (daca exista link).
+* **Lens:** Cauta cu Google Lens.
+* **TinEye:** Cauta cu TinEye.
+* **Copy URL:** Copiaza URL-ul imaginii.
+* **Editor:** Deschide editorul de imagini.
+
+### 5. Scurtaturi de Tastatura
+
+| Scurtatura | Actiune |
+|---|---|
+| `Ctrl+A` | Selecteaza / Deselecteaza toate imaginile vizibile |
+| `Ctrl+D` | Descarca imaginile selectate |
+| `Ctrl+Z` | Undo in editor |
+| `Esc` | Inchide editorul |
+
+---
+
+## Permisiuni
+
+| Permisiune | De ce e necesara |
+|---|---|
+| `activeTab` | Scaneaza tab-ul curent pentru imagini |
+| `scripting` | Injecteaza content script-ul de extragere |
+| `downloads` | Salveaza imaginile pe calculator |
+| `storage` | Persista preferintele utilizatorului local |
+
+Extensia **NU** colecteaza, transmite sau stocheaza date personale. Toate operatiunile au loc local in browser. Vezi [PRIVACY.md](PRIVACY.md) pentru detalii.
+
+---
+
+## Licenta
+
+MIT License — vezi fisierul LICENSE pentru detalii.
