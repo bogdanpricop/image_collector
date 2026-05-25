@@ -6,7 +6,7 @@
 ![Chrome](https://img.shields.io/badge/browser-chrome-red)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-**Pro Image Collector** is an advanced Chrome extension for extracting, filtering, editing, and bulk-downloading images from any webpage.
+**Pro Image Collector** is an advanced Chrome extension for extracting, filtering, editing, and bulk-downloading images and public video media from any webpage.
 Built for designers, developers, and OSINT researchers, it goes beyond simple downloading — offering analysis tools (Google Lens, TinEye), a full image editor, ZIP export, automatic conversion, and file organization.
 
 ![Main Screenshot](preview.png)
@@ -17,14 +17,14 @@ Built for designers, developers, and OSINT researchers, it goes beyond simple do
 ## Features
 
 ### Powerful Extraction
-* **Deep Scan:** Detects standard `<img>` tags, CSS background images (`background-image`), `srcset` attributes, and `<video poster>`.
-* **Lazy Loading & Dynamic Content:** A MutationObserver automatically detects new images added dynamically to the page.
+* **Deep Scan:** Detects standard `<img>` tags, CSS background images (`background-image`), `srcset` attributes, `<video poster>`, direct video sources, video links, common video data attributes, and video URLs embedded in page metadata.
+* **Lazy Loading & Dynamic Content:** A MutationObserver automatically detects new media added dynamically to the page.
 * **Smart Linking:** Detects whether an image is a link to a product/article page and provides a dedicated navigation button.
 
 ### Analysis & OSINT (Open Source Intelligence)
 * **Google Lens Integration:** Reverse visual search directly from the popup to find similar products or translations.
 * **TinEye Integration:** Verify the original source of an image or check copyright.
-* **Smart Filters:** Advanced filtering by dimensions (width/height), file type (JPG, PNG, WebP, SVG, GIF), and text (search in URL or `alt` attribute).
+* **Smart Filters:** Advanced filtering by dimensions (width/height), file type (JPG, PNG, WebP, SVG, GIF, AVIF, BMP, ICO, MP4, WebM, MOV, M4V, OGV, HLS, DASH), and text (search in URL or `alt` attribute).
 
 ### Built-in Image Editor
 * **Crop:** Percentage-based edge cropping.
@@ -41,7 +41,9 @@ Built for designers, developers, and OSINT researchers, it goes beyond simple do
 ### Flexible Download
 * **Individual Download:** Download each image separately (classic mode).
 * **ZIP Download:** Check "ZIP" to download all selected images in a single `.zip` file.
-* **WebP to PNG Converter:** Automatic conversion on download for maximum compatibility.
+* **WebP to PNG/JPG Converter:** Automatic conversion on download for maximum compatibility.
+* **Public Video Download:** Download direct public video URLs such as `.mp4`, `.webm`, `.mov`, `.m4v`, and `.ogv`.
+* **Stream Detection:** Detect HLS/DASH manifests (`.m3u8`, `.mpd`) and download/copy the manifest URL; segmented or DRM-protected streams are not assembled.
 * **Organization:** Save to dedicated subfolders and auto-rename files (e.g., `Vacation_001.jpg`).
 * **Progress Bar:** Real-time progress bar with counter during download.
 
@@ -70,12 +72,15 @@ Built for designers, developers, and OSINT researchers, it goes beyond simple do
 
 ### Developer Mode (Sideload)
 1. **Download the code:** Clone this repository or download the ZIP archive and extract it.
-2. **Open Chrome:** Navigate to `chrome://extensions/`.
-3. **Enable Developer Mode:** Toggle the switch in the top-right corner.
-4. **Load the extension:**
+2. **Build a clean extension folder:** Run `npm install`, then `npm run build:extension`.
+3. **Open Chrome/Edge:** Navigate to `chrome://extensions/` or `edge://extensions/`.
+4. **Enable Developer Mode:** Toggle the switch in the top-right corner.
+5. **Load the extension:**
    * Click **"Load unpacked"**.
-   * Select the folder containing the files (`manifest.json`, `popup.html`, etc.).
-5. Done! The extension should appear in your toolbar.
+   * Select `dist/edge-extension`.
+6. Done! The extension should appear in your toolbar.
+
+Do not load the repository root after running `npm install`; `node_modules` contains development-only folders that Chromium-based browsers reserve for internal use.
 
 ---
 
@@ -83,9 +88,9 @@ Built for designers, developers, and OSINT researchers, it goes beyond simple do
 
 ### 1. Control Bar (Top)
 * **Min Size:** Set minimum dimensions to exclude small icons (e.g., 50x50).
-* **Types:** Check which formats you want to see (JPG, PNG, WebP, SVG, GIF).
-* **WebP2PNG:** Check to automatically convert `.webp` images to `.png` on download.
-* **Rescan (↻):** Press if you've scrolled on a dynamic page (e.g., Instagram) to find new images.
+* **Types:** Check which formats you want to see (JPG, PNG, WebP, SVG, GIF, AVIF, BMP, ICO, MP4, WebM, MOV, M4V, OGV, HLS, DASH).
+* **WebP2:** Check to automatically convert `.webp` images to `.png` or `.jpg` on download.
+* **Rescan:** Press if you've scrolled on a dynamic page (e.g., Instagram) to find new media.
 
 ### 2. Filtering & Organization (Middle)
 * **Filter:** Type a keyword (e.g., "shoe") to show only images containing that text in their name or description.
@@ -94,7 +99,7 @@ Built for designers, developers, and OSINT researchers, it goes beyond simple do
 
 ### 3. Download Options
 * **Grid Slider:** Slide to adjust the number of columns (3–8).
-* **ZIP:** Check to download all selected images as a single ZIP file.
+* **ZIP:** Check to download all selected images as a single ZIP file. Selected videos are downloaded individually because large video ZIP creation depends on cross-origin fetch access.
 * **Export Format:** Choose the export format for edited images (PNG/JPG/WebP).
 
 ### 4. Image Actions (Hover)
@@ -105,6 +110,12 @@ Hover over an image to reveal the action bar:
 * **TinEye:** Search with TinEye.
 * **Copy URL:** Copy the image URL to clipboard.
 * **Editor:** Open the image editor.
+
+Video cards use a smaller action set:
+* **View:** Open the video or stream manifest in a new tab.
+* **Link:** Go to the linked page if one exists.
+* **Copy URL:** Copy the detected video URL.
+* **Download:** Download direct video files, or the manifest for HLS/DASH streams.
 
 ### 5. Keyboard Shortcuts
 
@@ -122,12 +133,15 @@ Hover over an image to reveal the action bar:
 ```text
 /
 ├── manifest.json          # Extension configuration (Manifest V3)
+├── scripts/               # Build helper scripts
+├── tests/                 # Jest test suite
 ├── popup.html             # User interface (UI)
 ├── popup.css              # Styles (extracted separately)
 ├── popup.js               # Main logic (filtering, download, editor, ZIP)
 ├── content.js             # Injected script for DOM extraction + MutationObserver
 ├── utils.js               # Pure utility functions (testable)
 ├── jszip.min.js           # JSZip library for ZIP downloads
+├── LICENSE                # MIT license
 ├── PRIVACY.md             # Privacy policy
 ├── store-description.txt  # Chrome Web Store description
 ├── icon16.png             # Icon 16x16
@@ -141,9 +155,9 @@ Hover over an image to reveal the action bar:
 
 | Permission | Why it's needed |
 |---|---|
-| `activeTab` | Scan the current tab for images |
+| `activeTab` | Scan the current tab for images and public video media |
 | `scripting` | Inject the extraction content script |
-| `downloads` | Save images to your computer |
+| `downloads` | Save images and direct public video media to your computer |
 | `storage` | Persist user preferences locally |
 
 This extension does **NOT** collect, transmit, or store any personal data. All processing happens locally in your browser. See [PRIVACY.md](PRIVACY.md) for details.
@@ -176,7 +190,7 @@ This extension does **NOT** collect, transmit, or store any personal data. All p
 * Image editor with Crop, Resize, Flip, Noise, Color, Obfuscate, Re-JPEG
 * Magic Cascade
 * Google Lens & TinEye integration
-* WebP to PNG conversion
+* WebP to PNG/JPG conversion
 
 ---
 
@@ -198,7 +212,7 @@ MIT License — see the LICENSE file for details.
 ![Chrome](https://img.shields.io/badge/browser-chrome-red)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-**Pro Image Collector** este o extensie Chrome avansata pentru extragerea, filtrarea, editarea si descarcarea imaginilor in masa.
+**Pro Image Collector** este o extensie Chrome avansata pentru extragerea, filtrarea, editarea si descarcarea imaginilor si media video publice in masa.
 Gandita pentru designeri, dezvoltatori si cercetare OSINT, aceasta extensie merge dincolo de simpla descarcare, oferind instrumente de analiza (Google Lens, TinEye), editor de imagini complet, descarcare ZIP, conversie automata si organizare a fisierelor.
 
 ![Screenshot Principal](preview.png)
@@ -209,14 +223,14 @@ Gandita pentru designeri, dezvoltatori si cercetare OSINT, aceasta extensie merg
 ## Functionalitati Cheie
 
 ### Extragere Puternica
-* **Deep Scan:** Detecteaza imagini standard `<img>`, imagini de fundal CSS (`background-image`), `srcset` si `<video poster>`.
-* **Lazy Loading & Dynamic Content:** MutationObserver detecteaza automat imagini noi adaugate dinamic pe pagina.
+* **Deep Scan:** Detecteaza imagini standard `<img>`, imagini de fundal CSS (`background-image`), `srcset`, `<video poster>`, surse video directe, linkuri video, atribute video uzuale si URL-uri video din metadata paginii.
+* **Lazy Loading & Dynamic Content:** MutationObserver detecteaza automat media noua adaugata dinamic pe pagina.
 * **Smart Linking:** Detecteaza daca o imagine este un link catre un produs/articol si ofera un buton dedicat pentru navigare.
 
 ### Analiza & OSINT (Open Source Intelligence)
 * **Google Lens Integration:** Cautare vizuala inversa direct din popup pentru a gasi produse similare sau traduceri.
 * **TinEye Integration:** Verifica sursa originala a imaginii sau drepturile de autor.
-* **Smart Filters:** Filtrare avansata dupa dimensiuni (latime/inaltime), tip fisier (JPG, PNG, WebP, SVG, GIF) si text (cautare in URL sau atributul `alt`).
+* **Smart Filters:** Filtrare avansata dupa dimensiuni (latime/inaltime), tip fisier (JPG, PNG, WebP, SVG, GIF, AVIF, BMP, ICO, MP4, WebM, MOV, M4V, OGV, HLS, DASH) si text (cautare in URL sau atributul `alt`).
 
 ### Editor de Imagini Integrat
 * **Crop:** Decupare procentuala a marginilor.
@@ -233,7 +247,9 @@ Gandita pentru designeri, dezvoltatori si cercetare OSINT, aceasta extensie merg
 ### Descarcare Flexibila
 * **Download Individual:** Descarca fiecare imagine separat (modul clasic).
 * **Download ZIP:** Bifeaza "ZIP" pentru a descarca toate imaginile selectate intr-un singur fisier `.zip`.
-* **WebP to PNG Converter:** Conversie automata la descarcare pentru compatibilitate maxima.
+* **WebP to PNG/JPG Converter:** Conversie automata la descarcare pentru compatibilitate maxima.
+* **Descarcare Video Public:** Descarca URL-uri video publice directe, precum `.mp4`, `.webm`, `.mov`, `.m4v` si `.ogv`.
+* **Detectie Stream:** Detecteaza manifesturi HLS/DASH (`.m3u8`, `.mpd`) si permite descarcarea/copierea manifestului; stream-urile segmentate sau protejate DRM nu sunt asamblate.
 * **Organizare:** Salvare in sub-foldere dedicate si redenumire automata a fisierelor (ex: `Vacanta_001.jpg`).
 * **Progress Bar:** Bara de progres reala cu contor la descarcare.
 
@@ -262,12 +278,15 @@ Gandita pentru designeri, dezvoltatori si cercetare OSINT, aceasta extensie merg
 
 ### Developer Mode (Sideload)
 1. **Descarca codul:** Cloneaza acest repository sau descarca arhiva ZIP si dezarhiveaz-o.
-2. **Deschide Chrome:** Mergi la adresa `chrome://extensions/`.
-3. **Activeaza Developer Mode:** Bifeaza comutatorul din coltul dreapta-sus ("Developer mode").
-4. **Incarca extensia:**
+2. **Construieste folderul curat al extensiei:** Ruleaza `npm install`, apoi `npm run build:extension`.
+3. **Deschide Chrome/Edge:** Mergi la `chrome://extensions/` sau `edge://extensions/`.
+4. **Activeaza Developer Mode:** Bifeaza comutatorul din coltul dreapta-sus ("Developer mode").
+5. **Incarca extensia:**
    * Apasa butonul **"Load unpacked"**.
-   * Selecteaza folderul unde ai fisierele (`manifest.json`, `popup.html`, etc.).
-5. Gata! Extensia ar trebui sa apara in bara ta de instrumente.
+   * Selecteaza `dist/edge-extension`.
+6. Gata! Extensia ar trebui sa apara in bara ta de instrumente.
+
+Nu incarca root-ul repository-ului dupa `npm install`; `node_modules` contine directoare de development rezervate de browserele bazate pe Chromium.
 
 ---
 
@@ -275,9 +294,9 @@ Gandita pentru designeri, dezvoltatori si cercetare OSINT, aceasta extensie merg
 
 ### 1. Bara de Control (Sus)
 * **Min Size:** Seteaza dimensiunile minime pentru a exclude iconitele mici (ex: 50x50).
-* **Tipuri:** Bifeaza ce formate vrei sa vezi (JPG, PNG, WebP, SVG, GIF).
-* **WebP2PNG:** Bifeaza pentru a converti automat imaginile `.webp` in `.png` la descarcare.
-* **Rescan:** Apasa daca ai dat scroll pe o pagina dinamica (ex: Instagram) pentru a gasi imagini noi.
+* **Tipuri:** Bifeaza ce formate vrei sa vezi (JPG, PNG, WebP, SVG, GIF, AVIF, BMP, ICO, MP4, WebM, MOV, M4V, OGV, HLS, DASH).
+* **WebP2:** Bifeaza pentru a converti automat imaginile `.webp` in `.png` sau `.jpg` la descarcare.
+* **Rescan:** Apasa daca ai dat scroll pe o pagina dinamica (ex: Instagram) pentru a gasi media noua.
 
 ### 2. Filtrare & Organizare (Mijloc)
 * **Filter:** Scrie un cuvant (ex: "pantof") pentru a afisa doar imaginile care contin acel text in nume sau descriere.
@@ -286,7 +305,7 @@ Gandita pentru designeri, dezvoltatori si cercetare OSINT, aceasta extensie merg
 
 ### 3. Optiuni de Descarcare
 * **Grid Slider:** Gliseaza pentru a ajusta numarul de coloane (3-8).
-* **ZIP:** Bifeaza pentru a descarca toate imaginile selectate ca un singur fisier ZIP.
+* **ZIP:** Bifeaza pentru a descarca toate imaginile selectate ca un singur fisier ZIP. Video-urile selectate se descarca individual, deoarece ZIP-ul video depinde de acces fetch cross-origin si poate implica fisiere mari.
 * **Export Format:** Alege formatul de export pentru imaginile editate (PNG/JPG/WebP).
 
 ### 4. Actiuni pe Imagine (Hover)
@@ -297,6 +316,12 @@ Cand treci cu mouse-ul peste o imagine, apare bara de actiuni:
 * **TinEye:** Cauta cu TinEye.
 * **Copy URL:** Copiaza URL-ul imaginii.
 * **Editor:** Deschide editorul de imagini.
+
+Cardurile video au actiuni potrivite pentru video:
+* **View:** Deschide video-ul sau manifestul de stream intr-un tab nou.
+* **Link:** Merge la pagina asociata daca exista.
+* **Copy URL:** Copiaza URL-ul video detectat.
+* **Download:** Descarca fisiere video directe sau manifestul pentru stream-uri HLS/DASH.
 
 ### 5. Scurtaturi de Tastatura
 
@@ -313,9 +338,9 @@ Cand treci cu mouse-ul peste o imagine, apare bara de actiuni:
 
 | Permisiune | De ce e necesara |
 |---|---|
-| `activeTab` | Scaneaza tab-ul curent pentru imagini |
+| `activeTab` | Scaneaza tab-ul curent pentru imagini si media video publice |
 | `scripting` | Injecteaza content script-ul de extragere |
-| `downloads` | Salveaza imaginile pe calculator |
+| `downloads` | Salveaza imaginile si video-urile publice directe pe calculator |
 | `storage` | Persista preferintele utilizatorului local |
 
 Extensia **NU** colecteaza, transmite sau stocheaza date personale. Toate operatiunile au loc local in browser. Vezi [PRIVACY.md](PRIVACY.md) pentru detalii.

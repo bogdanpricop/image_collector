@@ -5,6 +5,9 @@
 let allImages = [];
 let selectedImages = new Set();
 let filteredImagesCount = 0;
+let activeMediaTab = 'image';
+const STREAM_EXTENSIONS = new Set(['m3u8', 'mpd']);
+const MEDIA_TABS = new Set(['image', 'video']);
 
 // Editor state
 let originalImageSrc = null;
@@ -22,7 +25,7 @@ let dragStartX = 0;
 let dragStartY = 0;
 
 // Settings keys
-const SETTINGS_KEYS = ['minWidth', 'minHeight', 'gridSlider', 'zipMode', 'convertWebp', 'exportFormat'];
+const SETTINGS_KEYS = ['minWidth', 'minHeight', 'gridSlider', 'zipMode', 'convertWebp', 'convertWebpFormat', 'exportFormat', 'activeMediaTab'];
 
 document.addEventListener('DOMContentLoaded', () => {
   // --- UI Elements ---
@@ -32,6 +35,15 @@ document.addEventListener('DOMContentLoaded', () => {
   const selectAllBtn = document.getElementById('selectAllBtn');
   const rescanBtn = document.getElementById('rescanBtn');
   const emptyState = document.getElementById('emptyState');
+  const emptyIcon = emptyState.querySelector('.empty-icon');
+  const emptyText = emptyState.querySelector('.empty-text');
+  const emptyHint = emptyState.querySelector('.empty-hint');
+  const floatingTooltip = document.getElementById('floatingTooltip');
+  const mediaTabButtons = document.querySelectorAll('.media-tab');
+  const imageCountBadge = document.getElementById('imageCountBadge');
+  const videoCountBadge = document.getElementById('videoCountBadge');
+  const typeFilterGroups = document.querySelectorAll('.type-filter-group');
+  const imageOnlyOptions = document.querySelectorAll('.image-only-options');
 
   // Inputs & Filters
   const minWidthInput = document.getElementById('minWidth');
@@ -40,15 +52,17 @@ document.addEventListener('DOMContentLoaded', () => {
   const subfolderInput = document.getElementById('subfolderName');
   const renameInput = document.getElementById('renamePattern');
   const convertWebpCheckbox = document.getElementById('convertWebp');
+  const convertWebpFormatSelect = document.getElementById('convertWebpFormat');
   const zipModeCheckbox = document.getElementById('zipMode');
   const exportFormatSelect = document.getElementById('exportFormat');
   const gridSlider = document.getElementById('gridSlider');
-  const typeCheckboxes = document.querySelectorAll('.type-check input[type="checkbox"]');
+  const typeCheckboxes = document.querySelectorAll('.media-type-filter');
 
   // Progress
   const progressContainer = document.getElementById('progressContainer');
   const progressFill = document.getElementById('progressFill');
   const progressText = document.getElementById('progressText');
+  const trackedDownloadIds = new Map();
 
   // Modal Elements
   const modal = document.getElementById('imageModal');
@@ -86,15 +100,30 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // --- INITIALIZATION ---
   loadSettings();
+  updateMediaTabUI();
   applyGridColumns();
   scanPage();
 
   // Listen for new images detected by MutationObserver in content script
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg.action === 'newImagesDetected') {
-      notify('New images detected on page. Click Rescan to update.', 'info');
+      notify('New media detected on page. Click Rescan to update.', 'info');
     }
   });
+
+  if (chrome.downloads?.onChanged) {
+    chrome.downloads.onChanged.addListener((delta) => {
+      if (!trackedDownloadIds.has(delta.id)) return;
+
+      const filename = trackedDownloadIds.get(delta.id);
+      if (delta.error?.current) {
+        notify(`Download interrupted: ${filename} (${delta.error.current})`, 'error');
+        trackedDownloadIds.delete(delta.id);
+      } else if (delta.state?.current === 'complete') {
+        trackedDownloadIds.delete(delta.id);
+      }
+    });
+  }
 
   // --- SETTINGS PERSISTENCE ---
   function loadSettings() {
@@ -104,8 +133,12 @@ document.addEventListener('DOMContentLoaded', () => {
       if (data.gridSlider !== undefined) gridSlider.value = data.gridSlider;
       if (data.zipMode !== undefined) zipModeCheckbox.checked = data.zipMode;
       if (data.convertWebp !== undefined) convertWebpCheckbox.checked = data.convertWebp;
+      if (data.convertWebpFormat !== undefined) convertWebpFormatSelect.value = data.convertWebpFormat;
       if (data.exportFormat !== undefined) exportFormatSelect.value = data.exportFormat;
+      if (MEDIA_TABS.has(data.activeMediaTab)) activeMediaTab = data.activeMediaTab;
+      updateMediaTabUI();
       applyGridColumns();
+      renderImages();
     });
   }
 
@@ -116,7 +149,9 @@ document.addEventListener('DOMContentLoaded', () => {
     data.gridSlider = parseInt(gridSlider.value);
     data.zipMode = zipModeCheckbox.checked;
     data.convertWebp = convertWebpCheckbox.checked;
+    data.convertWebpFormat = convertWebpFormatSelect.value;
     data.exportFormat = exportFormatSelect.value;
+    data.activeMediaTab = activeMediaTab;
     chrome.storage.local.set(data);
   }
 
@@ -124,24 +159,86 @@ document.addEventListener('DOMContentLoaded', () => {
     document.documentElement.style.setProperty('--grid-cols', gridSlider.value);
   }
 
+  function getMediaCounts() {
+    const videoCount = allImages.filter(item => item.mediaType === 'video').length;
+    return {
+      image: allImages.length - videoCount,
+      video: videoCount
+    };
+  }
+
+  function getTabMedia(tab = activeMediaTab) {
+    return allImages.filter(item => (tab === 'video') === (item.mediaType === 'video'));
+  }
+
+  function getVisibleMedia() {
+    return filterImages(getTabMedia(), getActiveFilters());
+  }
+
+  function getActiveSelectedUrls() {
+    const activeUrls = new Set(getTabMedia().map(item => item.src));
+    return Array.from(selectedImages).filter(url => activeUrls.has(url));
+  }
+
+  function updateMediaTabUI() {
+    mediaTabButtons.forEach((button) => {
+      const isActive = button.dataset.mediaTab === activeMediaTab;
+      button.classList.toggle('active', isActive);
+      button.setAttribute('aria-selected', String(isActive));
+    });
+
+    typeFilterGroups.forEach((group) => {
+      group.classList.toggle('hidden', group.dataset.filterGroup !== activeMediaTab);
+    });
+
+    imageOnlyOptions.forEach((option) => {
+      option.classList.toggle('hidden', activeMediaTab !== 'image');
+    });
+  }
+
+  function updateMediaCounts() {
+    const counts = getMediaCounts();
+    imageCountBadge.textContent = counts.image;
+    videoCountBadge.textContent = counts.video;
+  }
+
+  function updateEmptyState() {
+    const isVideoTab = activeMediaTab === 'video';
+    emptyIcon.textContent = isVideoTab ? '\u25B6' : '\uD83D\uDCF7';
+    emptyText.textContent = isVideoTab ? 'No videos found' : 'No images found';
+    emptyHint.textContent = isVideoTab
+      ? 'Try playing or scrolling the page, then click Rescan.'
+      : 'Try scrolling the page and clicking Rescan, or adjust your filters.';
+  }
+
   // --- EVENT LISTENERS ---
+  mediaTabButtons.forEach((button) => {
+    button.addEventListener('click', () => {
+      const nextTab = button.dataset.mediaTab;
+      if (!MEDIA_TABS.has(nextTab) || activeMediaTab === nextTab) return;
+      activeMediaTab = nextTab;
+      updateMediaTabUI();
+      saveSettings();
+      renderImages();
+    });
+  });
+
   rescanBtn.addEventListener('click', scanPage);
   minWidthInput.addEventListener('input', () => { renderImages(); saveSettings(); });
   minHeightInput.addEventListener('input', () => { renderImages(); saveSettings(); });
   filterTextInput.addEventListener('input', renderImages);
   typeCheckboxes.forEach(cb => {
-    if (cb.id !== 'convertWebp' && cb.id !== 'zipMode') {
-      cb.addEventListener('change', renderImages);
-    }
+    cb.addEventListener('change', renderImages);
   });
 
   gridSlider.addEventListener('input', () => { applyGridColumns(); saveSettings(); });
   zipModeCheckbox.addEventListener('change', saveSettings);
   convertWebpCheckbox.addEventListener('change', saveSettings);
+  convertWebpFormatSelect.addEventListener('change', saveSettings);
   exportFormatSelect.addEventListener('change', saveSettings);
 
   selectAllBtn.addEventListener('click', toggleSelectAll);
-  downloadBtn.addEventListener('click', () => startDownloadProcess(Array.from(selectedImages)));
+  downloadBtn.addEventListener('click', () => startDownloadProcess(getActiveSelectedUrls()));
 
   closeModal.addEventListener('click', closeEditor);
   modal.addEventListener('click', (e) => { if (e.target === modal) closeEditor(); });
@@ -151,7 +248,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // Global shortcuts (when modal is closed)
     if (modal.style.display !== 'flex') {
       if (e.ctrlKey && e.key === 'a') { e.preventDefault(); toggleSelectAll(); }
-      if (e.ctrlKey && e.key === 'd') { e.preventDefault(); if (selectedImages.size > 0) startDownloadProcess(Array.from(selectedImages)); }
+      if (e.ctrlKey && e.key === 'd') {
+        e.preventDefault();
+        const activeSelectedUrls = getActiveSelectedUrls();
+        if (activeSelectedUrls.length > 0) startDownloadProcess(activeSelectedUrls);
+      }
       return;
     }
     // Modal shortcuts
@@ -161,7 +262,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // --- DRAG SELECT ---
   imageList.addEventListener('mousedown', (e) => {
-    if (e.target.closest('.mini-btn') || e.target.closest('.action-bar')) return;
+    if (e.target.closest('.mini-btn') || e.target.closest('.action-bar') || e.target.closest('.video-preview')) return;
     if (e.button !== 0) return;
     isDragging = true;
     dragStartX = e.clientX;
@@ -337,6 +438,65 @@ document.addEventListener('DOMContentLoaded', () => {
     el.className = type || '';
     el.classList.add('show');
     setTimeout(() => el.classList.remove('show'), 3000);
+  }
+
+  function openSafeUrl(url, allowedProtocols) {
+    try {
+      const parsedUrl = new URL(url);
+      if (!allowedProtocols.includes(parsedUrl.protocol)) {
+        throw new Error('Unsupported URL protocol');
+      }
+      chrome.tabs.create({ url: parsedUrl.href });
+    } catch (e) {
+      notify('Cannot open invalid or unsafe URL', 'error');
+    }
+  }
+
+  function positionFloatingTooltip(target) {
+    if (!floatingTooltip || !target) return;
+
+    const tooltipRect = floatingTooltip.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    const viewportPadding = 8;
+    let left = targetRect.left + (targetRect.width / 2);
+    let top = targetRect.bottom + 8;
+
+    left = Math.max(
+      viewportPadding + (tooltipRect.width / 2),
+      Math.min(window.innerWidth - viewportPadding - (tooltipRect.width / 2), left)
+    );
+
+    if (top + tooltipRect.height > window.innerHeight - viewportPadding) {
+      top = targetRect.top - 8;
+      floatingTooltip.style.transform = 'translate(-50%, -100%)';
+    } else {
+      floatingTooltip.style.transform = 'translate(-50%, 0)';
+    }
+
+    floatingTooltip.style.left = `${left}px`;
+    floatingTooltip.style.top = `${top}px`;
+  }
+
+  function showFloatingTooltip(target) {
+    if (!floatingTooltip || !target?.dataset.tooltip) return;
+
+    floatingTooltip.textContent = target.dataset.tooltip;
+    floatingTooltip.classList.add('show');
+    positionFloatingTooltip(target);
+  }
+
+  function hideFloatingTooltip() {
+    if (!floatingTooltip) return;
+    floatingTooltip.classList.remove('show');
+  }
+
+  function bindFloatingTooltip(target, text) {
+    target.dataset.tooltip = text;
+    target.addEventListener('mouseenter', () => showFloatingTooltip(target));
+    target.addEventListener('focus', () => showFloatingTooltip(target));
+    target.addEventListener('mousemove', () => positionFloatingTooltip(target));
+    target.addEventListener('mouseleave', hideFloatingTooltip);
+    target.addEventListener('blur', hideFloatingTooltip);
   }
 
   // --- Tool UI ---
@@ -555,10 +715,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function scanPage() {
     statusDiv.textContent = 'Scanning...';
+    updateEmptyState();
     imageList.replaceChildren();
     emptyState.style.display = 'none';
     allImages = [];
     selectedImages.clear();
+    filteredImagesCount = 0;
     updateStatus();
 
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -585,7 +747,7 @@ document.addEventListener('DOMContentLoaded', () => {
             emptyState.style.display = 'flex';
             return;
           }
-          chrome.tabs.sendMessage(tabId, { action: 'getImages' }, (response) => {
+          chrome.tabs.sendMessage(tabId, { action: 'getMedia' }, (response) => {
             if (chrome.runtime.lastError) {
               statusDiv.textContent = 'Error communicating with page.';
               emptyState.style.display = 'flex';
@@ -595,7 +757,7 @@ document.addEventListener('DOMContentLoaded', () => {
               allImages = response;
               renderImages();
             } else {
-              statusDiv.textContent = 'No images found.';
+              statusDiv.textContent = 'No media found.';
               emptyState.style.display = 'flex';
             }
           });
@@ -606,7 +768,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function getActiveFilters() {
     const allowedTypes = Array.from(typeCheckboxes)
-      .filter(cb => cb.checked && cb.id !== 'convertWebp' && cb.id !== 'zipMode')
+      .filter(cb => cb.checked && cb.dataset.mediaType === activeMediaTab)
       .map(cb => cb.value);
     return {
       minW: parseInt(minWidthInput.value) || 0,
@@ -616,30 +778,12 @@ document.addEventListener('DOMContentLoaded', () => {
     };
   }
 
-  function getFileExtension(url) {
-    if (url.startsWith('data:image')) return 'png';
-    const cleanUrl = url.split('?')[0].split('#')[0];
-    const ext = cleanUrl.split('.').pop().toLowerCase();
-    if (ext === 'jpeg') return 'jpg';
-    if (['jpg', 'png', 'webp', 'svg', 'gif', 'avif', 'bmp', 'ico'].includes(ext)) return ext;
-    return 'unknown';
-  }
-
   function renderImages() {
     imageList.replaceChildren();
-    const filters = getActiveFilters();
-
-    const filtered = allImages.filter(img => {
-      if (img.width < filters.minW || img.height < filters.minH) return false;
-      const ext = getFileExtension(img.src);
-      if (ext !== 'unknown' && !filters.types.includes(ext)) return false;
-      if (filters.text) {
-        const srcMatch = img.src.toLowerCase().includes(filters.text);
-        const altMatch = img.alt && img.alt.toLowerCase().includes(filters.text);
-        if (!srcMatch && !altMatch) return false;
-      }
-      return true;
-    });
+    updateMediaTabUI();
+    updateMediaCounts();
+    updateEmptyState();
+    const filtered = getVisibleMedia();
 
     filteredImagesCount = filtered.length;
     updateStatus();
@@ -650,85 +794,106 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     emptyState.style.display = 'none';
 
-    filtered.forEach(img => {
+    filtered.forEach(media => {
       const li = document.createElement('li');
-      li.dataset.src = img.src;
-      if (selectedImages.has(img.src)) li.classList.add('selected');
+      const isVideo = media.mediaType === 'video';
+      li.dataset.src = media.src;
+      if (isVideo) li.classList.add('video-card');
+      if (media.isStream) li.classList.add('stream-card');
+      if (selectedImages.has(media.src)) li.classList.add('selected');
 
-      const extDisplay = getFileExtension(img.src);
+      const extDisplay = getFileExtension(media.src);
+      const displayExt = extDisplay === 'unknown' ? (isVideo ? 'video' : 'file') : extDisplay;
 
-      // Build action bar
       const actionBar = document.createElement('div');
       actionBar.className = 'action-bar';
 
-      // View button
-      const viewBtn = createMiniBtn('\uD83D\uDC41', 'Open full image in new tab', (e) => {
-        e.stopPropagation(); chrome.tabs.create({ url: img.src });
-      });
-
-      // Link button
-      const linkBtn = createMiniBtn('\uD83D\uDD17', img.link ? 'Open linked page' : 'No link available', (e) => {
+      const viewBtn = createMiniBtn('\uD83D\uDC41', isVideo ? 'Open video in new tab' : 'Open full image in new tab', (e) => {
         e.stopPropagation();
-        if (img.link) chrome.tabs.create({ url: img.link });
+        openSafeUrl(media.src, ['http:', 'https:', 'data:', 'blob:']);
       });
-      if (!img.link) linkBtn.classList.add('disabled');
 
-      // Lens button
-      const lensBtn = createMiniBtn('\uD83D\uDCF7', 'Search with Google Lens', (e) => {
+      const linkBtn = createMiniBtn('\uD83D\uDD17', media.link ? 'Open linked page' : 'No link available', (e) => {
         e.stopPropagation();
-        chrome.tabs.create({ url: 'https://lens.google.com/uploadbyurl?url=' + encodeURIComponent(img.src) });
+        if (media.link) openSafeUrl(media.link, ['http:', 'https:']);
       });
+      if (!media.link) linkBtn.classList.add('disabled');
 
-      // TinEye button
-      const tineyeBtn = createMiniBtn('\uD83D\uDC40', 'Search with TinEye', (e) => {
+      const copyBtn = createMiniBtn('\uD83D\uDCCB', isVideo ? 'Copy video URL' : 'Copy image URL', (e) => {
         e.stopPropagation();
-        chrome.tabs.create({ url: 'https://tineye.com/search?url=' + encodeURIComponent(img.src) });
+        navigator.clipboard.writeText(media.src).then(() => notify("URL copied!", "info"));
       });
 
-      // Copy URL button
-      const copyBtn = createMiniBtn('\uD83D\uDCCB', 'Copy image URL', (e) => {
-        e.stopPropagation();
-        navigator.clipboard.writeText(img.src).then(() => notify("URL copied!", "info"));
-      });
+      actionBar.append(viewBtn, linkBtn, copyBtn);
 
-      // Editor button
-      const editorBtn = createMiniBtn('\uD83D\uDDBC', 'Open in image editor', (e) => {
-        e.stopPropagation(); openModal(img.src);
-      });
+      if (isVideo) {
+        const previewBtn = createMiniBtn('\u25B6', media.isStream ? 'Preview is not available for stream manifests' : 'Play preview in card', (e) => {
+          e.stopPropagation();
+          toggleVideoPreview(li, media);
+        });
+        previewBtn.classList.add('video-preview-toggle');
+        actionBar.append(previewBtn);
 
-      actionBar.append(viewBtn, linkBtn, lensBtn, tineyeBtn, copyBtn, editorBtn);
+        const canDownloadVideo = isVideoDownloadable(media);
+        const videoDownloadTitle = getVideoDownloadTitle(media);
+        const videoDownloadBtn = createMiniBtn('\u2B07', videoDownloadTitle, (e) => {
+          e.stopPropagation();
+          if (!canDownloadVideo) {
+            notify('This video is exposed as a blob/MediaSource URL. Copy or open it; direct download is not available from the popup.', 'error');
+            return;
+          }
+          startDownloadProcess([media.src]);
+        });
+        videoDownloadBtn.classList.add('video-download-btn');
+        if (!canDownloadVideo) videoDownloadBtn.classList.add('disabled');
+        actionBar.append(videoDownloadBtn);
+      } else {
+        const lensBtn = createMiniBtn('\uD83D\uDCF7', 'Search with Google Lens', (e) => {
+          e.stopPropagation();
+          chrome.tabs.create({ url: 'https://lens.google.com/uploadbyurl?url=' + encodeURIComponent(media.src) });
+        });
 
-      // Image wrapper
-      const imgWrapper = document.createElement('div');
-      imgWrapper.className = 'img-wrapper';
-      const imgEl = document.createElement('img');
-      imgEl.src = img.src;
-      imgEl.loading = 'lazy';
-      imgEl.alt = img.alt || '';
-      imgWrapper.appendChild(imgEl);
+        const tineyeBtn = createMiniBtn('\uD83D\uDC40', 'Search with TinEye', (e) => {
+          e.stopPropagation();
+          chrome.tabs.create({ url: 'https://tineye.com/search?url=' + encodeURIComponent(media.src) });
+        });
 
-      // Selection overlay
+        const editorBtn = createMiniBtn('\uD83D\uDDBC', 'Open in image editor', (e) => {
+          e.stopPropagation();
+          openModal(media.src);
+        });
+
+        actionBar.append(lensBtn, tineyeBtn, editorBtn);
+      }
+
+      const imgWrapper = isVideo ? createVideoThumbnail(media) : createImageThumbnail(media);
+
       const overlay = document.createElement('div');
       overlay.className = 'selection-overlay';
       const checkIcon = document.createElement('div');
       checkIcon.className = 'check-icon';
       overlay.appendChild(checkIcon);
 
-      // Metadata
       const metaExt = document.createElement('div');
       metaExt.className = 'meta-ext';
-      metaExt.textContent = extDisplay;
+      metaExt.textContent = displayExt;
 
       const metaSize = document.createElement('div');
       metaSize.className = 'meta-size';
-      metaSize.textContent = `${img.width}x${img.height}`;
+      if (isVideo) {
+        metaSize.textContent = media.width && media.height
+          ? `${media.width}x${media.height}`
+          : (media.isStream ? 'Stream' : 'Video');
+      } else {
+        metaSize.textContent = `${media.width}x${media.height}`;
+      }
 
       li.append(imgWrapper, actionBar, overlay, metaExt, metaSize);
 
-      // Click to select/deselect
-      li.addEventListener('click', () => {
-        if (selectedImages.has(img.src)) selectedImages.delete(img.src);
-        else selectedImages.add(img.src);
+      li.addEventListener('click', (e) => {
+        if (e.target.closest('.video-preview') || e.target.closest('.video-preview-toggle')) return;
+        if (selectedImages.has(media.src)) selectedImages.delete(media.src);
+        else selectedImages.add(media.src);
         li.classList.toggle('selected');
         updateStatus();
       });
@@ -737,38 +902,156 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  function createImageThumbnail(media) {
+    const imgWrapper = document.createElement('div');
+    imgWrapper.className = 'img-wrapper';
+    const imgEl = document.createElement('img');
+    imgEl.src = media.src;
+    imgEl.loading = 'lazy';
+    imgEl.alt = media.alt || '';
+    imgWrapper.appendChild(imgEl);
+    return imgWrapper;
+  }
+
+  function createVideoThumbnail(media) {
+    const imgWrapper = document.createElement('div');
+    imgWrapper.className = 'img-wrapper';
+
+    const videoPlaceholder = document.createElement('div');
+    videoPlaceholder.className = 'video-placeholder';
+    const playIcon = document.createElement('span');
+    playIcon.className = 'video-play';
+    playIcon.textContent = '\u25B6';
+    videoPlaceholder.appendChild(playIcon);
+    imgWrapper.appendChild(videoPlaceholder);
+
+    if (media.poster) {
+      const posterImg = document.createElement('img');
+      posterImg.className = 'video-poster';
+      posterImg.src = media.poster;
+      posterImg.loading = 'eager';
+      posterImg.decoding = 'async';
+      posterImg.alt = media.alt || 'video poster';
+      posterImg.addEventListener('error', () => posterImg.remove());
+      imgWrapper.appendChild(posterImg);
+    }
+
+    return imgWrapper;
+  }
+
+  function canPreviewVideo(media) {
+    if (!media || media.mediaType !== 'video') return false;
+    if (media.isStream || isStreamMedia(media.src)) return false;
+    if (String(media.src).toLowerCase().startsWith('blob:')) return false;
+    return true;
+  }
+
+  function isBlobUrl(url) {
+    return String(url || '').toLowerCase().startsWith('blob:');
+  }
+
+  function isVideoDownloadable(media) {
+    if (!media || media.mediaType !== 'video') return false;
+    if (media.downloadable === false) return false;
+    return !isBlobUrl(media.src);
+  }
+
+  function getVideoDownloadTitle(media) {
+    if (!isVideoDownloadable(media)) {
+      return 'Blob/MediaSource videos cannot be downloaded directly';
+    }
+    return media.isStream ? 'Download stream manifest' : 'Download video';
+  }
+
+  function stopVideoPreview(card) {
+    const video = card.querySelector('.video-preview');
+    if (!video) return;
+    video.pause();
+    video.removeAttribute('src');
+    video.load();
+    video.remove();
+    card.classList.remove('previewing');
+  }
+
+  function stopOtherVideoPreviews(activeCard) {
+    imageList.querySelectorAll('li.video-card.previewing').forEach((card) => {
+      if (card !== activeCard) stopVideoPreview(card);
+    });
+  }
+
+  function toggleVideoPreview(card, media) {
+    if (!canPreviewVideo(media)) {
+      notify('Preview works only for direct video files. Open or copy this stream URL instead.', 'info');
+      return;
+    }
+
+    const existingPreview = card.querySelector('.video-preview');
+    if (existingPreview) {
+      stopVideoPreview(card);
+      return;
+    }
+
+    stopOtherVideoPreviews(card);
+    hideFloatingTooltip();
+
+    const wrapper = card.querySelector('.img-wrapper');
+    if (!wrapper) return;
+
+    const preview = document.createElement('video');
+    preview.className = 'video-preview';
+    preview.src = media.src;
+    preview.poster = media.poster || '';
+    preview.controls = true;
+    preview.muted = true;
+    preview.loop = true;
+    preview.playsInline = true;
+    preview.preload = 'metadata';
+    preview.setAttribute('playsinline', '');
+    preview.setAttribute('aria-label', media.alt || 'Video preview');
+    preview.addEventListener('click', (e) => e.stopPropagation());
+    preview.addEventListener('mousedown', (e) => e.stopPropagation());
+    preview.addEventListener('error', () => {
+      stopVideoPreview(card);
+      notify('Preview failed in the popup. Try opening the video in a new tab.', 'error');
+    }, { once: true });
+
+    wrapper.appendChild(preview);
+    card.classList.add('previewing');
+
+    const playPromise = preview.play();
+    if (playPromise && typeof playPromise.catch === 'function') {
+      playPromise.catch(() => {
+        // Browser may require a second explicit tap; controls remain visible.
+      });
+    }
+  }
+
   function createMiniBtn(iconChar, titleText, handler) {
     const btn = document.createElement('div');
     btn.className = 'mini-btn';
     btn.textContent = iconChar;
-    btn.title = titleText;
     btn.setAttribute('role', 'button');
     btn.setAttribute('tabindex', '0');
     btn.setAttribute('aria-label', titleText);
+    bindFloatingTooltip(btn, titleText);
     btn.addEventListener('click', handler);
     btn.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handler(e); } });
     return btn;
   }
 
   function updateStatus() {
-    statusDiv.textContent = `Found: ${allImages.length} | Shown: ${filteredImagesCount} | Selected: ${selectedImages.size}`;
-    downloadBtn.textContent = selectedImages.size > 0 ? `Download (${selectedImages.size})` : 'Download';
-    downloadBtn.disabled = selectedImages.size === 0;
+    updateMediaCounts();
+    const counts = getMediaCounts();
+    const selectedInTab = getActiveSelectedUrls().length;
+    const tabLabel = activeMediaTab === 'video' ? 'Videos' : 'Images';
+    const foundInTab = counts[activeMediaTab];
+    statusDiv.textContent = `${tabLabel}: ${foundInTab} | Shown: ${filteredImagesCount} | Selected: ${selectedInTab}`;
+    downloadBtn.textContent = selectedInTab > 0 ? `Download (${selectedInTab})` : 'Download';
+    downloadBtn.disabled = selectedInTab === 0;
   }
 
   function toggleSelectAll() {
-    const filters = getActiveFilters();
-    const visibleImages = allImages.filter(img => {
-      if (img.width < filters.minW || img.height < filters.minH) return false;
-      const ext = getFileExtension(img.src);
-      if (ext !== 'unknown' && !filters.types.includes(ext)) return false;
-      if (filters.text) {
-        const srcMatch = img.src.toLowerCase().includes(filters.text);
-        const altMatch = img.alt && img.alt.toLowerCase().includes(filters.text);
-        if (!srcMatch && !altMatch) return false;
-      }
-      return true;
-    });
+    const visibleImages = getVisibleMedia();
 
     const allSelected = visibleImages.every(img => selectedImages.has(img.src));
     if (allSelected) {
@@ -784,134 +1067,259 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function startDownloadProcess(urlsArray) {
     const renameBase = renameInput.value.trim();
-    const folderName = subfolderInput.value.trim().replace(/[<>:"/\\|?*]+/g, '');
+    const folderName = sanitizeFolderName(subfolderInput.value);
     const shouldConvert = convertWebpCheckbox.checked;
+    const webpConversionTarget = getWebpConversionTarget();
     const useZip = zipModeCheckbox.checked;
+
+    if (urlsArray.length === 0) {
+      updateStatus();
+      return;
+    }
 
     downloadBtn.textContent = 'Downloading...';
     downloadBtn.disabled = true;
     showProgress(0, urlsArray.length);
 
     if (useZip) {
-      await downloadAsZip(urlsArray, renameBase, folderName, shouldConvert);
+      await downloadAsZip(urlsArray, renameBase, folderName, shouldConvert, webpConversionTarget);
     } else {
-      await downloadIndividual(urlsArray, renameBase, folderName, shouldConvert);
+      await downloadIndividual(urlsArray, renameBase, folderName, shouldConvert, webpConversionTarget);
     }
 
     hideProgress();
     updateStatus();
   }
 
-  async function downloadIndividual(urlsArray, renameBase, folderName, shouldConvert) {
-    let idx = 1;
-    for (const url of urlsArray) {
-      let finalUrl = url;
-      let finalFilename = '';
-      let ext = url.startsWith('data:image') ? 'png' : getFileExtension(url);
-      if (ext === 'unknown') ext = 'jpg';
+  function getWebpConversionTarget() {
+    return convertWebpFormatSelect.value === 'jpeg' ? 'jpeg' : 'png';
+  }
 
-      if (shouldConvert && ext === 'webp' && !url.startsWith('data:image')) {
-        try { finalUrl = await convertWebPtoPNG(url); ext = 'png'; } catch (e) { /* use original */ }
-      }
+  function getFormatExtension(format) {
+    return format === 'jpeg' ? 'jpg' : format;
+  }
 
-      if (renameBase) {
-        finalFilename = `${renameBase}_${idx.toString().padStart(3, '0')}.${ext}`;
-      } else if (!url.startsWith('data:image')) {
-        let n = url.substring(url.lastIndexOf('/') + 1).split('?')[0];
-        finalFilename = (n && n.length < 50 && n.length > 0) ? n : `image_${idx}.${ext}`;
-      } else {
-        finalFilename = `processed_${idx}.${ext}`;
-      }
+  function getFormatMimeType(format) {
+    return format === 'jpeg' ? 'image/jpeg' : 'image/png';
+  }
 
-      if (folderName) {
-        finalFilename = `${folderName}/${finalFilename}`;
-      }
+  function getMediaItem(url) {
+    return allImages.find(item => item.src === url) || { src: url, mediaType: 'image' };
+  }
 
-      chrome.downloads.download({
-        url: finalUrl,
-        filename: finalFilename || undefined,
-        conflictAction: 'uniquify'
+  function isVideoMedia(url) {
+    return getMediaItem(url).mediaType === 'video';
+  }
+
+  function isStreamMedia(url) {
+    const item = getMediaItem(url);
+    const ext = getFileExtension(url);
+    return item.isStream || STREAM_EXTENSIONS.has(ext);
+  }
+
+  function getDownloadExtension(url, mediaType) {
+    const ext = getFileExtension(url);
+    if (ext !== 'unknown') return ext;
+    return mediaType === 'video' ? 'mp4' : 'jpg';
+  }
+
+  function downloadWithChrome(options, label) {
+    return new Promise((resolve, reject) => {
+      chrome.downloads.download(options, (downloadId) => {
+        const err = chrome.runtime.lastError;
+        if (err) {
+          reject(new Error(err.message || 'Download failed'));
+          return;
+        }
+
+        if (!downloadId && downloadId !== 0) {
+          reject(new Error('Download did not start'));
+          return;
+        }
+
+        trackedDownloadIds.set(downloadId, label || options.filename || options.url);
+        resolve(downloadId);
       });
+    });
+  }
+
+  function getDownloadErrorHint(error) {
+    const message = error?.message || 'Unknown error';
+    if (/USER_CANCELED/i.test(message)) return 'Download was cancelled.';
+    if (/Invalid URL|URL/i.test(message)) return 'Invalid or unsupported video URL.';
+    if (/filename/i.test(message)) return 'Invalid filename generated for this download.';
+    if (/network|forbidden|denied|failed/i.test(message)) {
+      return 'The host blocked the download or the URL expired.';
+    }
+    return message;
+  }
+
+  async function downloadIndividual(urlsArray, renameBase, folderName, shouldConvert, webpConversionTarget) {
+    let idx = 1;
+    let skippedBlobVideos = 0;
+    let streamCount = 0;
+    let startedCount = 0;
+    let failedCount = 0;
+    let lastErrorHint = '';
+
+    for (const url of urlsArray) {
+      const mediaItem = getMediaItem(url);
+      const isVideo = mediaItem.mediaType === 'video';
+      let finalUrl = url;
+      let ext = getDownloadExtension(url, mediaItem.mediaType);
+
+      if (isVideo) {
+        if (!isVideoDownloadable(mediaItem)) {
+          skippedBlobVideos++;
+          updateProgress(idx, urlsArray.length);
+          idx++;
+          continue;
+        }
+
+        if (isStreamMedia(url)) streamCount++;
+
+        const finalFilename = generateFilename(url, idx, renameBase, folderName, ext);
+
+        try {
+          await downloadWithChrome({
+            url: finalUrl,
+            filename: finalFilename || undefined,
+            conflictAction: 'uniquify'
+          }, finalFilename);
+          startedCount++;
+        } catch (e) {
+          failedCount++;
+          lastErrorHint = getDownloadErrorHint(e);
+        }
+
+        updateProgress(idx, urlsArray.length);
+        idx++;
+        continue;
+      }
+
+      if (shouldConvert && ext === 'webp') {
+        try {
+          finalUrl = await convertImageFormat(url, webpConversionTarget);
+          ext = getFormatExtension(webpConversionTarget);
+        } catch (e) {
+          // Use original file if canvas conversion is blocked.
+        }
+      }
+
+      const finalFilename = generateFilename(url, idx, renameBase, folderName, ext);
+
+      try {
+        await downloadWithChrome({
+          url: finalUrl,
+          filename: finalFilename || undefined,
+          conflictAction: 'uniquify'
+        }, finalFilename);
+        startedCount++;
+      } catch (e) {
+        failedCount++;
+        lastErrorHint = getDownloadErrorHint(e);
+      }
 
       updateProgress(idx, urlsArray.length);
       idx++;
     }
+
+    if (streamCount > 0) {
+      notify('Stream URLs were downloaded as manifests; segmented/DRM video is not assembled.', 'info');
+    }
+    if (skippedBlobVideos > 0) {
+      notify('Blob/MediaSource videos cannot be downloaded directly. Try Rescan after playback, or copy/open the detected stream URL.', 'error');
+    } else if (failedCount > 0) {
+      notify(`Download failed for ${failedCount} item(s): ${lastErrorHint}`, 'error');
+    } else if (startedCount > 0) {
+      notify(`Started ${startedCount} download(s).`, 'info');
+    }
   }
 
-  async function downloadAsZip(urlsArray, renameBase, folderName, shouldConvert) {
+  async function downloadAsZip(urlsArray, renameBase, folderName, shouldConvert, webpConversionTarget) {
+    const videoUrls = urlsArray.filter(isVideoMedia);
+    const imageUrls = urlsArray.filter(url => !isVideoMedia(url));
+
+    if (videoUrls.length > 0) {
+      notify('Videos are downloaded individually; ZIP is used for images.', 'info');
+      await downloadIndividual(videoUrls, renameBase, folderName, shouldConvert, webpConversionTarget);
+    }
+
+    if (imageUrls.length === 0) {
+      return;
+    }
+
     const zip = new JSZip();
     const folder = folderName ? zip.folder(folderName) : zip;
     let idx = 1;
+    let addedCount = 0;
 
-    for (const url of urlsArray) {
+    for (const url of imageUrls) {
       try {
-        let ext = url.startsWith('data:image') ? 'png' : getFileExtension(url);
+        let ext = getFileExtension(url);
         if (ext === 'unknown') ext = 'jpg';
 
         let imageData;
 
-        if (url.startsWith('data:')) {
+        if (shouldConvert && ext === 'webp') {
+          try {
+            const convertedDataUrl = await convertImageFormat(url, webpConversionTarget);
+            imageData = convertedDataUrl.split(',')[1];
+            ext = getFormatExtension(webpConversionTarget);
+          } catch (e) {
+            if (url.startsWith('data:')) {
+              imageData = url.split(',')[1];
+            } else {
+              const resp = await fetch(url);
+              imageData = await resp.blob();
+            }
+          }
+        } else if (url.startsWith('data:')) {
           // Data URL - extract base64
           const base64 = url.split(',')[1];
           imageData = base64;
         } else {
-          // Fetch image
-          let fetchUrl = url;
-          if (shouldConvert && ext === 'webp') {
+          try {
+            const resp = await fetch(url);
+            const blob = await resp.blob();
+            imageData = blob;
+          } catch (fetchErr) {
+            // CORS blocked - fallback: load via canvas as PNG.
             try {
-              const pngDataUrl = await convertWebPtoPNG(url);
-              imageData = pngDataUrl.split(',')[1];
+              const dataUrl = await loadImageAsDataUrl(url);
+              imageData = dataUrl.split(',')[1];
               ext = 'png';
-            } catch (e) {
-              // Fallback to original
-              const resp = await fetch(url);
-              const blob = await resp.blob();
-              imageData = blob;
-            }
-          } else {
-            try {
-              const resp = await fetch(url);
-              const blob = await resp.blob();
-              imageData = blob;
-            } catch (fetchErr) {
-              // CORS blocked — fallback: load via canvas
-              try {
-                const dataUrl = await loadImageAsDataUrl(url);
-                imageData = dataUrl.split(',')[1];
-              } catch (canvasErr) {
-                // CORS blocked — skip this image
-                continue;
-              }
+            } catch (canvasErr) {
+              // CORS blocked - skip this image.
+              continue;
             }
           }
         }
 
-        let filename;
-        if (renameBase) {
-          filename = `${renameBase}_${idx.toString().padStart(3, '0')}.${ext}`;
-        } else if (!url.startsWith('data:image')) {
-          let n = url.substring(url.lastIndexOf('/') + 1).split('?')[0];
-          filename = (n && n.length < 50 && n.length > 0) ? n : `image_${idx}.${ext}`;
-        } else {
-          filename = `processed_${idx}.${ext}`;
-        }
+        const filename = generateFilename(url, idx, renameBase, '', ext);
 
         if (typeof imageData === 'string') {
           folder.file(filename, imageData, { base64: true });
         } else {
           folder.file(filename, imageData);
         }
+        addedCount++;
 
-        updateProgress(idx, urlsArray.length, 'Fetching');
+        updateProgress(idx, imageUrls.length, 'Fetching');
       } catch (e) {
         // Skip failed images silently
       }
       idx++;
     }
 
-    updateProgress(urlsArray.length, urlsArray.length, 'Creating ZIP');
+    updateProgress(imageUrls.length, imageUrls.length, 'Creating ZIP');
 
     try {
+      if (addedCount === 0) {
+        notify('No images could be added to the ZIP file.', 'error');
+        return;
+      }
+
       const blob = await zip.generateAsync({
         type: 'blob',
         compression: 'DEFLATE',
@@ -922,7 +1330,8 @@ document.addEventListener('DOMContentLoaded', () => {
       });
 
       const zipUrl = URL.createObjectURL(blob);
-      const zipName = folderName ? `${folderName}.zip` : 'images.zip';
+      const lastFolderSegment = folderName ? folderName.split('/').filter(Boolean).pop() : '';
+      const zipName = lastFolderSegment ? `${sanitizeFileName(lastFolderSegment, 'images')}.zip` : 'images.zip';
 
       chrome.downloads.download({
         url: zipUrl,
@@ -933,36 +1342,37 @@ document.addEventListener('DOMContentLoaded', () => {
         setTimeout(() => URL.revokeObjectURL(zipUrl), 5000);
       });
 
-      notify(`ZIP created with ${urlsArray.length} images!`, '');
+      notify(`ZIP created with ${addedCount} images!`, '');
     } catch (e) {
       notify('Failed to create ZIP file: ' + (e.message || 'Unknown error'), 'error');
     }
   }
 
   function loadImageAsDataUrl(url) {
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      img.crossOrigin = "Anonymous";
-      img.onload = () => {
-        const c = document.getElementById('conversionCanvas');
-        c.width = img.width; c.height = img.height;
-        c.getContext('2d').drawImage(img, 0, 0);
-        resolve(c.toDataURL('image/png'));
-      };
-      img.onerror = reject;
-      img.src = url;
-    });
+    return convertImageFormat(url, 'png');
   }
 
-  function convertWebPtoPNG(url) {
+  function convertImageFormat(url, format) {
     return new Promise((resolve, reject) => {
       const img = new Image();
       img.crossOrigin = "Anonymous";
       img.onload = () => {
-        const c = document.getElementById('conversionCanvas');
-        c.width = img.width; c.height = img.height;
-        c.getContext('2d').drawImage(img, 0, 0);
-        resolve(c.toDataURL('image/png'));
+        try {
+          const c = document.getElementById('conversionCanvas');
+          c.width = img.width; c.height = img.height;
+          const ctx = c.getContext('2d');
+
+          if (format === 'jpeg') {
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(0, 0, c.width, c.height);
+          }
+
+          ctx.drawImage(img, 0, 0);
+          const quality = format === 'jpeg' ? 0.92 : undefined;
+          resolve(c.toDataURL(getFormatMimeType(format), quality));
+        } catch (e) {
+          reject(e);
+        }
       };
       img.onerror = reject;
       img.src = url;
@@ -976,7 +1386,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function updateProgress(current, total, label) {
-    const pct = Math.round((current / total) * 100);
+    const pct = total > 0 ? Math.round((current / total) * 100) : 0;
     progressFill.style.width = pct + '%';
     progressText.textContent = `${label || 'Downloading'}: ${current} / ${total} (${pct}%)`;
   }

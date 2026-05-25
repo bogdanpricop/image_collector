@@ -1,14 +1,15 @@
 {
   "name": "image_collector",
-  "version": "1.0.0",
-  "description": "![Version](https://img.shields.io/badge/version-8.0-blue) ![Chrome](https://img.shields.io/badge/browser-chrome-red) ![License](https://img.shields.io/badge/license-MIT-green)",
+  "version": "8.0.0",
+  "description": "Chrome extension for extracting, filtering, editing, and bulk-downloading images from webpages.",
   "main": "content.js",
   "scripts": {
+    "build:extension": "node scripts/build-extension.js",
     "test": "jest --verbose"
   },
   "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "author": "Pricop Bogdan",
+  "license": "MIT",
   "type": "commonjs",
   "devDependencies": {
     "jest": "^30.3.0",

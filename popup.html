@@ -7,26 +7,54 @@
 <body>
 
   <div id="controls">
-    <!-- Row 1: Filters -->
-    <div class="row">
+    <!-- Row 1: Media tabs, size filter, rescan -->
+    <div class="row tab-row">
+      <div id="mediaTabs" class="media-tabs" role="tablist" aria-label="Media type">
+        <button id="imageTab" class="media-tab active" type="button" role="tab" aria-selected="true" data-media-tab="image">
+          Images <span id="imageCountBadge" class="count-badge">0</span>
+        </button>
+        <button id="videoTab" class="media-tab" type="button" role="tab" aria-selected="false" data-media-tab="video">
+          Videos <span id="videoCountBadge" class="count-badge">0</span>
+        </button>
+      </div>
       <div class="flex-group">
         <label>Min:</label>
         <input type="number" id="minWidth" value="50"><span>x</span><input type="number" id="minHeight" value="50">
-        <button id="rescanBtn" class="btn-outline btn-icon" title="Rescan page for new images">&#8635;</button>
-      </div>
-      <div class="flex-group">
-        <span class="separator" aria-hidden="true">|</span>
-        <label class="type-check"><input type="checkbox" checked value="jpg"> JPG</label>
-        <label class="type-check"><input type="checkbox" checked value="png"> PNG</label>
-        <label class="type-check"><input type="checkbox" checked value="webp"> WebP</label>
-        <label class="type-check"><input type="checkbox" checked value="svg"> SVG</label>
-        <label class="type-check"><input type="checkbox" checked value="gif"> GIF</label>
-        <span class="separator" aria-hidden="true">|</span>
-        <label class="type-check" style="color:#d63384; font-weight:700;"><input type="checkbox" id="convertWebp"> WebP2PNG</label>
+        <button id="rescanBtn" class="btn-outline btn-icon" title="Rescan page for new media">&#8635;</button>
       </div>
     </div>
 
-    <!-- Row 2: Search, Folder, Rename -->
+    <!-- Row 2: Type filters -->
+    <div class="row filter-row">
+      <div class="flex-group type-filter-group" data-filter-group="image">
+        <label class="type-check"><input class="media-type-filter" type="checkbox" checked value="jpg" data-media-type="image"> JPG</label>
+        <label class="type-check"><input class="media-type-filter" type="checkbox" checked value="png" data-media-type="image"> PNG</label>
+        <label class="type-check"><input class="media-type-filter" type="checkbox" checked value="webp" data-media-type="image"> WebP</label>
+        <label class="type-check"><input class="media-type-filter" type="checkbox" checked value="svg" data-media-type="image"> SVG</label>
+        <label class="type-check"><input class="media-type-filter" type="checkbox" checked value="gif" data-media-type="image"> GIF</label>
+        <label class="type-check"><input class="media-type-filter" type="checkbox" checked value="avif" data-media-type="image"> AVIF</label>
+        <label class="type-check"><input class="media-type-filter" type="checkbox" checked value="bmp" data-media-type="image"> BMP</label>
+        <label class="type-check"><input class="media-type-filter" type="checkbox" checked value="ico" data-media-type="image"> ICO</label>
+      </div>
+      <div class="flex-group type-filter-group hidden" data-filter-group="video">
+        <label class="type-check"><input class="media-type-filter" type="checkbox" checked value="mp4" data-media-type="video"> MP4</label>
+        <label class="type-check"><input class="media-type-filter" type="checkbox" checked value="webm" data-media-type="video"> WebM</label>
+        <label class="type-check"><input class="media-type-filter" type="checkbox" checked value="mov" data-media-type="video"> MOV</label>
+        <label class="type-check"><input class="media-type-filter" type="checkbox" checked value="m4v" data-media-type="video"> M4V</label>
+        <label class="type-check"><input class="media-type-filter" type="checkbox" checked value="ogv" data-media-type="video"> OGV</label>
+        <label class="type-check"><input class="media-type-filter" type="checkbox" checked value="m3u8" data-media-type="video"> HLS</label>
+        <label class="type-check"><input class="media-type-filter" type="checkbox" checked value="mpd" data-media-type="video"> DASH</label>
+      </div>
+      <div id="imageDownloadOptions" class="flex-group image-only-options">
+        <label class="type-check" style="color:#d63384; font-weight:700;"><input type="checkbox" id="convertWebp"> WebP2</label>
+        <select id="convertWebpFormat" title="Target format for WebP conversion">
+          <option value="png">PNG</option>
+          <option value="jpeg">JPG</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Row 3: Search, Folder, Rename -->
     <div class="row">
       <div class="input-wrapper" style="flex: 2;">
         <label>Filter:</label>
@@ -42,7 +70,7 @@
       </div>
     </div>
 
-    <!-- Row 3: Actions -->
+    <!-- Row 4: Actions -->
     <div class="row" style="margin-top: 10px; border-top: 1px solid #eee; padding-top: 8px;">
       <div id="status">Scanning...</div>
       <div class="flex-group">
@@ -50,7 +78,7 @@
         <label class="type-check" style="color:#6f42c1; font-weight:700;" title="Download all selected as a single ZIP file">
           <input type="checkbox" id="zipMode"> ZIP
         </label>
-        <label class="type-check" title="Export format for edited images">
+        <label id="editorExportOption" class="type-check image-only-options" title="Export format for edited images">
           <select id="exportFormat">
             <option value="png">PNG</option>
             <option value="jpeg">JPG</option>
@@ -72,7 +100,7 @@
   <!-- Empty State -->
   <div id="emptyState">
     <div class="empty-icon">&#128247;</div>
-    <div class="empty-text">No images found</div>
+    <div class="empty-text">No media found</div>
     <div class="empty-hint">Try scrolling the page and clicking Rescan, or adjust your filters.</div>
   </div>
 
@@ -84,6 +112,7 @@
 
   <!-- Notification Toast -->
   <div id="notification"></div>
+  <div id="floatingTooltip" role="tooltip"></div>
 
   <!-- Modal Image Editor -->
   <div id="imageModal">
@@ -144,6 +173,7 @@
   <canvas id="conversionCanvas" style="display:none;"></canvas>
 
   <script src="jszip.min.js"></script>
+  <script src="utils.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

@@ -7,7 +7,14 @@
  * visible user problems.
  */
 
-const { getFileExtension, escapeHtml, filterImages, generateFilename, sanitizeFolderName } = require('../utils');
+const {
+  getFileExtension,
+  escapeHtml,
+  filterImages,
+  generateFilename,
+  sanitizeFileName,
+  sanitizeFolderName
+} = require('../utils');
 
 // ============================================================
 // getFileExtension — parses image format from URLs
@@ -41,10 +48,12 @@ describe('getFileExtension', () => {
   });
 
   // 📚 DATA URLS: Canvas exports and inline images use data:image/...
-  // We default to PNG since that's what canvas.toDataURL() produces
-  it('should return png for data URLs', () => {
+  it('should return the image subtype for data URLs', () => {
     expect(getFileExtension('data:image/png;base64,iVBOR...')).toBe('png');
-    expect(getFileExtension('data:image/jpeg;base64,/9j/4...')).toBe('png');
+    expect(getFileExtension('data:image/jpeg;base64,/9j/4...')).toBe('jpg');
+    expect(getFileExtension('data:image/webp;base64,UklGR...')).toBe('webp');
+    expect(getFileExtension('data:image/svg+xml;base64,PHN2Zy...')).toBe('svg');
+    expect(getFileExtension('data:video/mp4;base64,AAAA...')).toBe('mp4');
   });
 
   // 📚 UNKNOWN: URLs without recognizable image extensions
@@ -59,6 +68,14 @@ describe('getFileExtension', () => {
     expect(getFileExtension('https://example.com/photo.avif')).toBe('avif');
     expect(getFileExtension('https://example.com/photo.bmp')).toBe('bmp');
     expect(getFileExtension('https://example.com/favicon.ico')).toBe('ico');
+  });
+
+  it('should recognize common video and stream formats', () => {
+    expect(getFileExtension('https://cdn.example.com/film.mp4')).toBe('mp4');
+    expect(getFileExtension('https://cdn.example.com/film.webm')).toBe('webm');
+    expect(getFileExtension('https://cdn.example.com/film.mov')).toBe('mov');
+    expect(getFileExtension('https://cdn.example.com/film.m3u8?token=abc')).toBe('m3u8');
+    expect(getFileExtension('https://cdn.example.com/manifest.mpd')).toBe('mpd');
   });
 
   // 📚 EDGE: URLs with dots in path segments (not extension)
@@ -180,6 +197,20 @@ describe('filterImages', () => {
     expect(result.length).toBe(3);
   });
 
+  it('should not hide video entries just because they have no dimensions yet', () => {
+    const media = [
+      { src: 'https://example.com/movie.mp4', alt: 'Movie', width: 0, height: 0, mediaType: 'video' },
+      { src: 'https://example.com/tiny.jpg', alt: 'Tiny', width: 10, height: 10, mediaType: 'image' }
+    ];
+    const result = filterImages(media, {
+      minW: 100,
+      minH: 100,
+      text: '',
+      types: ['jpg', 'mp4']
+    });
+    expect(result).toEqual([media[0]]);
+  });
+
   // 📚 EMPTY: No images matching should return empty array, not error
   it('should return empty array when nothing matches', () => {
     const result = filterImages(testImages, { ...allTypesFilter, text: 'nonexistent_xyz' });
@@ -233,11 +264,24 @@ describe('generateFilename', () => {
   });
 
   // 📚 UNKNOWN EXTENSION: URLs without extension default to jpg
-  // The URL path segment "12345" is short enough to use as filename, but ext is unknown→jpg
   it('should default to jpg for unknown extensions', () => {
     const result = generateFilename('https://api.example.com/image/12345', 1, '', '');
-    // "12345" is extracted from URL and is < 50 chars, so it's used as-is
-    expect(result).toBe('12345');
+    expect(result).toBe('12345.jpg');
+  });
+
+  it('should apply a forced extension when converting files', () => {
+    const result = generateFilename('https://example.com/photo.webp', 1, '', '', 'png');
+    expect(result).toBe('photo.png');
+  });
+
+  it('should normalize forced jpeg extension to jpg when converting files', () => {
+    const result = generateFilename('https://example.com/photo.webp', 1, '', '', 'jpeg');
+    expect(result).toBe('photo.jpg');
+  });
+
+  it('should apply a forced video extension when downloading media without one', () => {
+    const result = generateFilename('https://cdn.example.com/video/12345', 1, '', '', 'mp4');
+    expect(result).toBe('12345.mp4');
   });
 
   // 📚 EDGE: Very long filenames from URL should fallback
@@ -264,10 +308,15 @@ describe('sanitizeFolderName', () => {
     expect(sanitizeFolderName('my<folder>')).toBe('myfolder');
     expect(sanitizeFolderName('path:to:file')).toBe('pathtofile');
     expect(sanitizeFolderName('file"name')).toBe('filename');
-    expect(sanitizeFolderName('back\\slash')).toBe('backslash');
+    expect(sanitizeFolderName('back\\slash')).toBe('back/slash');
     expect(sanitizeFolderName('pipe|char')).toBe('pipechar');
     expect(sanitizeFolderName('question?mark')).toBe('questionmark');
     expect(sanitizeFolderName('star*wild')).toBe('starwild');
+  });
+
+  it('should preserve safe subfolder separators', () => {
+    expect(sanitizeFolderName('Projects/Design')).toBe('Projects/Design');
+    expect(sanitizeFolderName('../Secrets')).toBe('Secrets');
   });
 
   it('should trim whitespace', () => {
@@ -281,5 +330,18 @@ describe('sanitizeFolderName', () => {
 
   it('should handle empty string', () => {
     expect(sanitizeFolderName('')).toBe('');
+  });
+});
+
+// ============================================================
+// sanitizeFileName — download entry safety
+// ============================================================
+describe('sanitizeFileName', () => {
+  it('should remove path separators and reserved characters from filenames', () => {
+    expect(sanitizeFileName('bad/name:image?.jpg')).toBe('badnameimage.jpg');
+  });
+
+  it('should prefix Windows reserved device names', () => {
+    expect(sanitizeFileName('CON')).toBe('_CON');
   });
 });

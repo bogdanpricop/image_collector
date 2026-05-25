@@ -3,7 +3,7 @@ module.exports = {
     {
       displayName: 'utils',
       testEnvironment: 'node',
-      testMatch: ['**/__tests__/utils.test.js'],
+      testMatch: ['**/tests/utils.test.js'],
     },
     {
       displayName: 'content',
@@ -11,7 +11,7 @@ module.exports = {
       testEnvironmentOptions: {
         url: 'https://example.com',
       },
-      testMatch: ['**/__tests__/content.test.js'],
+      testMatch: ['**/tests/content.test.js'],
     },
   ],
 };

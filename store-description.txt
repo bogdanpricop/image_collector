@@ -1,40 +1,42 @@
-Pro Image Collector - Advanced Image Extraction & Download Tool
+Pro Image Collector - Advanced Image & Video Extraction Tool
 
-Extract, filter, edit, and bulk-download images from any webpage. Designed for designers, developers, and OSINT researchers.
+Extract, filter, edit, and bulk-download images plus direct public video media from any webpage. Designed for designers, developers, and OSINT researchers.
 
 KEY FEATURES:
 
-📥 POWERFUL EXTRACTION
-• Deep scan: Detects <img> tags, CSS background images, srcset, and video posters
-• Automatic lazy-load detection with MutationObserver
-• Smart linking: Detects if an image links to a product/article page
+POWERFUL EXTRACTION
+- Deep scan: Detects img tags, CSS background images, srcset, video posters, direct video URLs, links, data attributes, and metadata
+- Automatic lazy-load detection with MutationObserver for images and videos
+- Smart linking: Detects if an image or video links to a product/article page
 
-🔍 ANALYSIS & OSINT
-• Google Lens integration for visual search
-• TinEye integration for source/copyright verification
-• Advanced filters by size, file type (JPG, PNG, WebP, SVG, GIF), and text search
+ANALYSIS & OSINT
+- Google Lens integration for visual search
+- TinEye integration for source/copyright verification
+- Advanced filters by size, file type (JPG, PNG, WebP, SVG, GIF, AVIF, BMP, ICO, MP4, WebM, MOV, HLS, DASH), and text search
 
-🛠️ EDITING TOOLS
-• Built-in image editor with Crop, Resize, Flip, Rotate, Noise, Color shift
-• Blur/Sharpen obfuscation for pixel-level changes
-• JPEG recompression at custom quality
-• Magic Cascade: One-click pipeline of all transformations
-• Full undo/redo support (up to 20 steps)
+EDITING TOOLS
+- Built-in image editor with Crop, Resize, Flip, Rotate, Noise, Color shift
+- Blur/Sharpen obfuscation for pixel-level changes
+- JPEG recompression at custom quality
+- Magic Cascade: One-click pipeline of all transformations
+- Full undo/redo support (up to 20 steps)
 
-📦 DOWNLOAD OPTIONS
-• Individual file download (classic mode)
-• ZIP archive download (all selected images in one file)
-• WebP to PNG automatic conversion
-• Custom subfolder organization
-• Batch rename with sequential numbering
-• Export in PNG, JPG, or WebP format
+DOWNLOAD OPTIONS
+- Individual file download (classic mode)
+- ZIP archive download for selected images
+- WebP to PNG/JPG automatic conversion
+- Direct public video download for MP4, WebM, MOV, M4V, and OGV
+- HLS/DASH manifest detection for m3u8/mpd streams
+- Custom subfolder organization
+- Batch rename with sequential numbering
+- Export edited images in PNG, JPG, or WebP format
 
-🎨 SMART INTERFACE
-• Responsive grid with adjustable column count (3-8)
-• Drag-to-select multiple images
-• Keyboard shortcuts (Ctrl+A, Ctrl+D, Ctrl+Z, Esc)
-• Persistent settings across sessions
-• Real-time status bar and download progress
-• Copy image URL to clipboard
+SMART INTERFACE
+- Responsive grid with adjustable column count (3-8)
+- Drag-to-select multiple media items
+- Keyboard shortcuts (Ctrl+A, Ctrl+D, Ctrl+Z, Esc)
+- Persistent settings across sessions
+- Real-time status bar and download progress
+- Copy image or video URL to clipboard
 
 PRIVACY: This extension does NOT collect or transmit any user data. All processing happens locally in your browser.
