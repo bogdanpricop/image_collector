@@ -3,7 +3,7 @@
 
 (() => {
   const INJECTION_KEY = '__proImageCollectorInjected';
-  const INJECTION_VERSION = 'media-v5';
+  const INJECTION_VERSION = 'media-v6';
   const BLOB_PREVIEW_ID = '__proImageCollectorBlobPreview';
   const RESOURCE_CACHE_KEY = '__proImageCollectorVideoResources';
   const RESOURCE_OBSERVER_KEY = '__proImageCollectorResourceObserver';
@@ -11,6 +11,7 @@
   const VIDEO_THUMBNAIL_MAX_WIDTH = 240;
   const VIDEO_EXTENSIONS = new Set(['mp4', 'webm', 'mov', 'm4v', 'ogv', 'm3u8', 'mpd']);
   const STREAM_EXTENSIONS = new Set(['m3u8', 'mpd']);
+  const YOUTUBE_PROGRESSIVE_ITAGS = new Set(['5', '6', '17', '18', '22', '34', '35', '36', '37', '38', '43', '44', '45', '46', '59', '78', '82', '83', '84', '85', '91', '92', '93', '94', '95', '96']);
   const VIDEO_URL_PATTERN = /\.(mp4|webm|mov|m4v|ogv|m3u8|mpd)(?:$|[?#])/i;
 
   if (window[INJECTION_KEY] === INJECTION_VERSION) {
@@ -85,6 +86,18 @@
     return STREAM_EXTENSIONS.has(getExtensionFromUrl(url));
   }
 
+  function getPlatformFromUrl(rawUrl) {
+    try {
+      const host = new URL(rawUrl, document.baseURI).hostname.toLowerCase();
+      if (host.includes('twitter.com') || host === 'x.com' || host.endsWith('.x.com') || host.includes('twimg.com')) return 'twitter';
+      if (host.includes('youtube.com') || host.includes('youtu.be') || host.includes('googlevideo.com') || host.includes('ytimg.com')) return 'youtube';
+      if (host.includes('tiktok') || host.includes('byteoversea') || host.includes('bytecdn') || host.includes('ibytedtos')) return 'tiktok';
+      return '';
+    } catch (e) {
+      return '';
+    }
+  }
+
   function hasVideoMimeHint(parsedUrl) {
     for (const [rawKey, rawValue] of parsedUrl.searchParams.entries()) {
       const key = rawKey.toLowerCase();
@@ -111,13 +124,66 @@
       host.includes('snssdk') ||
       (host.includes('akamaized') && /^v\d+[a-z-]*\./.test(host));
 
-    if (!looksLikeTiktokHost) return false;
-
-    return path.includes('/video/') ||
+    if (looksLikeTiktokHost && (path.includes('/video/') ||
       path.includes('/tos/') ||
       path.includes('/tos-') ||
       parsedUrl.searchParams.has('x-expires') ||
-      parsedUrl.searchParams.has('x-signature');
+      parsedUrl.searchParams.has('x-signature'))) {
+      return true;
+    }
+
+    const looksLikeTwitterVideo =
+      host.includes('video.twimg.com') ||
+      host.includes('twimg.com') ||
+      host.includes('twitter.com') ||
+      host === 'x.com' ||
+      host.endsWith('.x.com');
+
+    if (looksLikeTwitterVideo && (
+      path.includes('/ext_tw_video/') ||
+      path.includes('/amplify_video/') ||
+      path.includes('/tweet_video/') ||
+      path.includes('/vid/') ||
+      path.endsWith('.mp4')
+    )) {
+      return true;
+    }
+
+    if (host.includes('googlevideo.com') && path.includes('/videoplayback') && hasVideoMimeHint(parsedUrl)) {
+      return true;
+    }
+
+    return false;
+  }
+
+  function isYouTubeProgressiveUrl(rawUrl) {
+    try {
+      const parsedUrl = new URL(rawUrl, document.baseURI);
+      if (!parsedUrl.hostname.toLowerCase().includes('googlevideo.com')) return false;
+      if (!parsedUrl.pathname.toLowerCase().includes('/videoplayback')) return false;
+
+      const itag = parsedUrl.searchParams.get('itag') || '';
+      const mime = (parsedUrl.searchParams.get('mime') || '').toLowerCase();
+      return mime.includes('video/') && YOUTUBE_PROGRESSIVE_ITAGS.has(itag);
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function isNonDownloadableVideoUrl(rawUrl, platform) {
+    if (platform === 'youtube') {
+      try {
+        const parsedUrl = new URL(rawUrl, document.baseURI);
+        if (parsedUrl.hostname.toLowerCase().includes('googlevideo.com') &&
+            parsedUrl.pathname.toLowerCase().includes('/videoplayback')) {
+          return !isYouTubeProgressiveUrl(parsedUrl.href);
+        }
+      } catch (e) {
+        return false;
+      }
+    }
+
+    return false;
   }
 
   function isBlobVideoUrl(url) {
@@ -138,6 +204,49 @@
       .replace(/[. ]+$/g, '');
 
     return cleaned || fallback;
+  }
+
+  function normalizeEmbeddedText(rawText) {
+    return String(rawText || '')
+      .replace(/\\u002[fF]/g, '/')
+      .replace(/\\u0026/g, '&')
+      .replace(/\\u003[dD]/g, '=')
+      .replace(/\\u003[fF]/g, '?')
+      .replace(/\\\//g, '/')
+      .replace(/&amp;/g, '&');
+  }
+
+  function getPageThumbnailUrl() {
+    const selectors = [
+      'meta[property="og:image"]',
+      'meta[property="og:image:secure_url"]',
+      'meta[name="twitter:image"]',
+      'meta[name="twitter:image:src"]',
+      'link[rel="image_src"]'
+    ];
+
+    for (const selector of selectors) {
+      const el = document.querySelector(selector);
+      const value = el?.getAttribute('content') || el?.getAttribute('href');
+      const resolved = resolveImageUrl(value);
+      if (resolved) return resolved;
+    }
+
+    return null;
+  }
+
+  function getPageVideoTitle(fallback = 'video') {
+    const selectors = [
+      'meta[property="og:title"]',
+      'meta[name="twitter:title"]'
+    ];
+
+    for (const selector of selectors) {
+      const value = document.querySelector(selector)?.getAttribute('content');
+      if (value?.trim()) return value.trim();
+    }
+
+    return document.title?.trim() || fallback;
   }
 
   function isVideoLikeUrl(rawUrl) {
@@ -251,6 +360,11 @@
   function addVideo(videoMap, rawSrc, metadata = {}) {
     const src = resolveVideoUrl(rawSrc);
     if (!src || videoMap.has(src)) return;
+    const platform = metadata.platform || getPlatformFromUrl(src) || getPlatformFromUrl(location.href);
+    const isBlob = src.toLowerCase().startsWith('blob:');
+    const downloadable = metadata.downloadable === false
+      ? false
+      : (!isBlob && !isNonDownloadableVideoUrl(src, platform));
 
     videoMap.set(src, {
       src,
@@ -263,8 +377,9 @@
       poster: resolveImageUrl(metadata.poster) || null,
       thumbnail: resolveImageUrl(metadata.thumbnail) || resolveImageUrl(metadata.poster) || null,
       sourceType: metadata.sourceType || 'video',
+      platform,
       isStream: isStreamUrl(src),
-      downloadable: !src.toLowerCase().startsWith('blob:'),
+      downloadable,
       resourceIndex: typeof metadata.resourceIndex === 'number' ? metadata.resourceIndex : -1
     });
   }
@@ -316,11 +431,29 @@
   }
 
   function getBestPageVideoMetadata(sourceType = 'resource') {
-    return Array.from(document.querySelectorAll('video'))
+    const pageThumbnail = getPageThumbnailUrl();
+    const pageTitle = getPageVideoTitle('video');
+    const videoMetadata = Array.from(document.querySelectorAll('video'))
       .map(video => ({ video, score: scorePageVideoElement(video) }))
       .filter(item => item.score > 0)
       .sort((a, b) => b.score - a.score)
-      .map(item => getVideoElementMetadata(item.video, sourceType))[0] || {};
+      .map(item => getVideoElementMetadata(item.video, sourceType))[0];
+
+    if (videoMetadata) {
+      return {
+        ...videoMetadata,
+        alt: videoMetadata.alt || pageTitle,
+        poster: videoMetadata.poster || pageThumbnail,
+        thumbnail: videoMetadata.thumbnail || pageThumbnail
+      };
+    }
+
+    return {
+      alt: pageTitle,
+      poster: pageThumbnail,
+      thumbnail: pageThumbnail,
+      sourceType
+    };
   }
 
   function getImages() {
@@ -449,6 +582,28 @@
     });
   }
 
+  function collectMetaVideos(videoMap) {
+    const pageMetadata = getBestPageVideoMetadata('metadata');
+    const selectors = [
+      'meta[property="og:video"]',
+      'meta[property="og:video:url"]',
+      'meta[property="og:video:secure_url"]',
+      'meta[name="twitter:player:stream"]',
+      'meta[itemprop="contentUrl"]',
+      'link[rel="preload"][as="video"]'
+    ];
+
+    document.querySelectorAll(selectors.join(',')).forEach((el) => {
+      const value = el.getAttribute('content') || el.getAttribute('href');
+      if (!isVideoLikeUrl(value)) return;
+
+      addVideo(videoMap, value, {
+        ...pageMetadata,
+        sourceType: 'metadata'
+      });
+    });
+  }
+
   function collectPerformanceVideos(videoMap) {
     if (!window.performance || typeof window.performance.getEntriesByType !== 'function') return;
 
@@ -490,10 +645,7 @@
       if (!rawText) return;
 
       const remainingChars = maxTotalChars - totalChars;
-      const text = rawText
-        .slice(0, remainingChars)
-        .replace(/\\u002[fF]/g, '/')
-        .replace(/\\\//g, '/');
+      const text = normalizeEmbeddedText(rawText.slice(0, remainingChars));
       totalChars += text.length;
 
       for (const match of text.matchAll(absoluteUrlPattern)) {
@@ -514,6 +666,7 @@
     collectVideoElements(videoMap);
     collectVideoLinks(videoMap);
     collectVideoDataAttributes(videoMap);
+    collectMetaVideos(videoMap);
     collectPerformanceVideos(videoMap);
     collectTextVideoUrls(videoMap);
 

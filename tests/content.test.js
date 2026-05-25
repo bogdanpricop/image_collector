@@ -16,6 +16,7 @@
 
 const VIDEO_EXTENSIONS = new Set(['mp4', 'webm', 'mov', 'm4v', 'ogv', 'm3u8', 'mpd']);
 const STREAM_EXTENSIONS = new Set(['m3u8', 'mpd']);
+const YOUTUBE_PROGRESSIVE_ITAGS = new Set(['5', '6', '17', '18', '22', '34', '35', '36', '37', '38', '43', '44', '45', '46', '59', '78', '82', '83', '84', '85', '91', '92', '93', '94', '95', '96']);
 const VIDEO_URL_PATTERN = /\.(mp4|webm|mov|m4v|ogv|m3u8|mpd)(?:$|[?#])/i;
 
 function resolveImageUrl(rawUrl) {
@@ -99,6 +100,18 @@ function isVideoLikeUrl(rawUrl) {
   }
 }
 
+function getPlatformFromUrl(rawUrl) {
+  try {
+    const host = new URL(rawUrl, document.baseURI).hostname.toLowerCase();
+    if (host.includes('twitter.com') || host === 'x.com' || host.endsWith('.x.com') || host.includes('twimg.com')) return 'twitter';
+    if (host.includes('youtube.com') || host.includes('youtu.be') || host.includes('googlevideo.com') || host.includes('ytimg.com')) return 'youtube';
+    if (host.includes('tiktok') || host.includes('byteoversea') || host.includes('bytecdn') || host.includes('ibytedtos')) return 'tiktok';
+    return '';
+  } catch (e) {
+    return '';
+  }
+}
+
 function hasVideoMimeHint(parsedUrl) {
   for (const [rawKey, rawValue] of parsedUrl.searchParams.entries()) {
     const key = rawKey.toLowerCase();
@@ -125,13 +138,118 @@ function isKnownVideoCdnUrl(parsedUrl) {
     host.includes('snssdk') ||
     (host.includes('akamaized') && /^v\d+[a-z-]*\./.test(host));
 
-  if (!looksLikeTiktokHost) return false;
-
-  return path.includes('/video/') ||
+  if (looksLikeTiktokHost && (path.includes('/video/') ||
     path.includes('/tos/') ||
     path.includes('/tos-') ||
     parsedUrl.searchParams.has('x-expires') ||
-    parsedUrl.searchParams.has('x-signature');
+    parsedUrl.searchParams.has('x-signature'))) {
+    return true;
+  }
+
+  const looksLikeTwitterVideo =
+    host.includes('video.twimg.com') ||
+    host.includes('twimg.com') ||
+    host.includes('twitter.com') ||
+    host === 'x.com' ||
+    host.endsWith('.x.com');
+
+  if (looksLikeTwitterVideo && (
+    path.includes('/ext_tw_video/') ||
+    path.includes('/amplify_video/') ||
+    path.includes('/tweet_video/') ||
+    path.includes('/vid/') ||
+    path.endsWith('.mp4')
+  )) {
+    return true;
+  }
+
+  if (host.includes('googlevideo.com') && path.includes('/videoplayback') && hasVideoMimeHint(parsedUrl)) {
+    return true;
+  }
+
+  return false;
+}
+
+function isYouTubeProgressiveUrl(rawUrl) {
+  try {
+    const parsedUrl = new URL(rawUrl, document.baseURI);
+    if (!parsedUrl.hostname.toLowerCase().includes('googlevideo.com')) return false;
+    if (!parsedUrl.pathname.toLowerCase().includes('/videoplayback')) return false;
+
+    const itag = parsedUrl.searchParams.get('itag') || '';
+    const mime = (parsedUrl.searchParams.get('mime') || '').toLowerCase();
+    return mime.includes('video/') && YOUTUBE_PROGRESSIVE_ITAGS.has(itag);
+  } catch (e) {
+    return false;
+  }
+}
+
+function isNonDownloadableVideoUrl(rawUrl, platform) {
+  if (platform === 'youtube') {
+    try {
+      const parsedUrl = new URL(rawUrl, document.baseURI);
+      if (parsedUrl.hostname.toLowerCase().includes('googlevideo.com') &&
+          parsedUrl.pathname.toLowerCase().includes('/videoplayback')) {
+        return !isYouTubeProgressiveUrl(parsedUrl.href);
+      }
+    } catch (e) {
+      return false;
+    }
+  }
+
+  return false;
+}
+
+function normalizeEmbeddedText(rawText) {
+  return String(rawText || '')
+    .replace(/\\u002[fF]/g, '/')
+    .replace(/\\u0026/g, '&')
+    .replace(/\\u003[dD]/g, '=')
+    .replace(/\\u003[fF]/g, '?')
+    .replace(/\\\//g, '/')
+    .replace(/&amp;/g, '&');
+}
+
+function getPageThumbnailUrl() {
+  const selectors = [
+    'meta[property="og:image"]',
+    'meta[property="og:image:secure_url"]',
+    'meta[name="twitter:image"]',
+    'meta[name="twitter:image:src"]',
+    'link[rel="image_src"]'
+  ];
+
+  for (const selector of selectors) {
+    const el = document.querySelector(selector);
+    const value = el?.getAttribute('content') || el?.getAttribute('href');
+    const resolved = resolveImageUrl(value);
+    if (resolved) return resolved;
+  }
+
+  return null;
+}
+
+function getPageVideoTitle(fallback = 'video') {
+  const selectors = [
+    'meta[property="og:title"]',
+    'meta[name="twitter:title"]'
+  ];
+
+  for (const selector of selectors) {
+    const value = document.querySelector(selector)?.getAttribute('content');
+    if (value?.trim()) return value.trim();
+  }
+
+  return document.title?.trim() || fallback;
+}
+
+function getBestPageVideoMetadata(sourceType = 'resource') {
+  return {
+    alt: getPageVideoTitle('video'),
+    poster: getPageThumbnailUrl(),
+    thumbnail: getPageThumbnailUrl(),
+    sourceType
+  };
 }
 
 function addImage(imageMap, rawSrc, metadata) {
@@ -152,6 +270,11 @@ function addImage(imageMap, rawSrc, metadata) {
 function addVideo(videoMap, rawSrc, metadata) {
   const src = resolveVideoUrl(rawSrc);
   if (!src || videoMap.has(src)) return;
+  const platform = metadata.platform || getPlatformFromUrl(src) || getPlatformFromUrl(location.href);
+  const isBlob = src.toLowerCase().startsWith('blob:');
+  const downloadable = metadata.downloadable === false
+    ? false
+    : (!isBlob && !isNonDownloadableVideoUrl(src, platform));
 
   videoMap.set(src, {
     src,
@@ -164,8 +287,9 @@ function addVideo(videoMap, rawSrc, metadata) {
     poster: resolveImageUrl(metadata.poster) || null,
     thumbnail: resolveImageUrl(metadata.thumbnail) || resolveImageUrl(metadata.poster) || null,
     sourceType: metadata.sourceType || 'video',
+    platform,
     isStream: STREAM_EXTENSIONS.has(getExtensionFromUrl(src)),
-    downloadable: !src.toLowerCase().startsWith('blob:')
+    downloadable
   });
 }
 
@@ -293,16 +417,25 @@ function getVideos() {
     });
   });
 
+  const pageMetadata = getBestPageVideoMetadata('metadata');
+  document.querySelectorAll('meta[property="og:video"], meta[property="og:video:url"], meta[property="og:video:secure_url"], meta[name="twitter:player:stream"], meta[itemprop="contentUrl"], link[rel="preload"][as="video"]').forEach((el) => {
+    const value = el.getAttribute('content') || el.getAttribute('href');
+    if (!isVideoLikeUrl(value)) return;
+    addVideo(videoMap, value, {
+      ...pageMetadata,
+      sourceType: 'metadata'
+    });
+  });
+
   const absoluteUrlPattern = /(?:https?:)?\/\/[^"'<>\s\\]+/gi;
   document.querySelectorAll('script, template').forEach((el) => {
-    const text = (el.textContent || '')
-      .replace(/\\u002[fF]/g, '/')
-      .replace(/\\\//g, '/');
+    const text = normalizeEmbeddedText(el.textContent || '');
 
     for (const match of text.matchAll(absoluteUrlPattern)) {
       const rawUrl = match[0].startsWith('//') ? `${location.protocol}${match[0]}` : match[0];
       if (!isVideoLikeUrl(rawUrl)) continue;
       addVideo(videoMap, rawUrl, {
+        ...pageMetadata,
         alt: 'video metadata',
         sourceType: 'metadata'
       });
@@ -320,7 +453,9 @@ function getMedia() {
 }
 
 beforeEach(() => {
+  document.head.innerHTML = '';
   document.body.innerHTML = '';
+  document.title = '';
 });
 
 // ============================================================
@@ -593,6 +728,54 @@ describe('getVideos', () => {
     expect(videos[0].src).toContain('v16-webapp-prime.tiktok.com/video/tos/');
     expect(videos[0].src).toContain('mime_type=video_mp4');
     expect(videos[0].sourceType).toBe('metadata');
+  });
+
+  it('should extract X/Twitter MP4 variants with page thumbnails', () => {
+    document.head.innerHTML = `
+      <meta name="twitter:image" content="https://pbs.twimg.com/ext_tw_video_thumb/123/pu/img/thumb.jpg">
+      <meta name="twitter:title" content="X clip">
+    `;
+    document.body.innerHTML = `
+      <script type="application/json">
+        {"variants":[{"content_type":"video/mp4","url":"https:\\/\\/video.twimg.com\\/ext_tw_video\\/123\\/pu\\/vid\\/720x720\\/clip.mp4?tag=12"}]}
+      </script>
+    `;
+    const videos = getVideos();
+    expect(videos.length).toBe(1);
+    expect(videos[0].src).toContain('video.twimg.com/ext_tw_video/123/pu/vid/720x720/clip.mp4');
+    expect(videos[0].platform).toBe('twitter');
+    expect(videos[0].thumbnail).toBe('https://pbs.twimg.com/ext_tw_video_thumb/123/pu/img/thumb.jpg');
+    expect(videos[0].downloadable).toBe(true);
+  });
+
+  it('should extract YouTube progressive googlevideo URLs and keep thumbnails', () => {
+    document.head.innerHTML = `
+      <meta property="og:image" content="https://i.ytimg.com/vi/abc/maxresdefault.jpg">
+      <meta property="og:title" content="YouTube clip">
+    `;
+    document.body.innerHTML = `
+      <script>
+        var ytInitialPlayerResponse = {"streamingData":{"formats":[{"url":"https:\\/\\/rr1---sn.googlevideo.com\\/videoplayback?expire=1800000000\\u0026itag=18\\u0026mime=video%2Fmp4"}]}};
+      </script>
+    `;
+    const videos = getVideos();
+    expect(videos.length).toBe(1);
+    expect(videos[0].src).toContain('googlevideo.com/videoplayback');
+    expect(videos[0].platform).toBe('youtube');
+    expect(videos[0].thumbnail).toBe('https://i.ytimg.com/vi/abc/maxresdefault.jpg');
+    expect(videos[0].downloadable).toBe(true);
+  });
+
+  it('should mark YouTube adaptive googlevideo URLs as not directly downloadable', () => {
+    document.body.innerHTML = `
+      <script>
+        {"url":"https:\\/\\/rr1---sn.googlevideo.com\\/videoplayback?expire=1800000000\\u0026itag=137\\u0026mime=video%2Fmp4"}
+      </script>
+    `;
+    const videos = getVideos();
+    expect(videos.length).toBe(1);
+    expect(videos[0].platform).toBe('youtube');
+    expect(videos[0].downloadable).toBe(false);
   });
 
   it('should combine images and videos in getMedia', () => {

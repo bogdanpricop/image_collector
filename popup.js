@@ -974,6 +974,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (isBlobUrl(media?.src)) {
       return 'Download blob video from source page';
     }
+    if (media?.platform === 'youtube' && media.downloadable === false) {
+      return 'YouTube adaptive streams are preview-only';
+    }
     if (!isVideoDownloadable(media)) return 'This video cannot be downloaded directly';
     return media.isStream ? 'Download stream manifest' : 'Download video';
   }
