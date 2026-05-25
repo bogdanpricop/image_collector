@@ -1043,6 +1043,17 @@ document.addEventListener('DOMContentLoaded', () => {
     return response;
   }
 
+  async function downloadVideoUrlOnPage(media, filename) {
+    const response = await sendContentAction({
+      action: 'downloadVideoUrl',
+      src: media.src,
+      filename
+    });
+
+    if (!response.ok) throw new Error(response.error || 'Video download failed');
+    return response;
+  }
+
   function stopVideoPreview(card) {
     const video = card.querySelector('.video-preview');
     if (!video) return;
@@ -1249,6 +1260,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let idx = 1;
     let skippedVideoDownloads = 0;
     let blobFallbackCount = 0;
+    let pageFallbackCount = 0;
     let streamCount = 0;
     let startedCount = 0;
     let failedCount = 0;
@@ -1271,17 +1283,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (isStreamMedia(url)) streamCount++;
 
         const finalFilename = generateFilename(url, idx, renameBase, folderName, ext);
+        const shouldUsePageDownload = mediaItem.sourceType === 'resource' || mediaItem.sourceType === 'metadata';
 
         if (isBlobUrl(url)) {
           try {
-            const blobResponse = await downloadBlobVideoOnPage(mediaItem, finalFilename);
-            if (blobResponse.downloadUrl) {
-              await downloadWithChrome({
-                url: blobResponse.downloadUrl,
-                filename: finalFilename || undefined,
-                conflictAction: 'uniquify'
-              }, finalFilename);
-            }
+            await downloadBlobVideoOnPage(mediaItem, finalFilename);
             blobFallbackCount++;
             startedCount++;
           } catch (e) {
@@ -1294,16 +1300,42 @@ document.addEventListener('DOMContentLoaded', () => {
           continue;
         }
 
-        try {
-          await downloadWithChrome({
-            url: finalUrl,
-            filename: finalFilename || undefined,
-            conflictAction: 'uniquify'
-          }, finalFilename);
-          startedCount++;
-        } catch (e) {
-          failedCount++;
-          lastErrorHint = getDownloadErrorHint(e);
+        if (shouldUsePageDownload) {
+          try {
+            await downloadVideoUrlOnPage(mediaItem, finalFilename);
+            pageFallbackCount++;
+            startedCount++;
+          } catch (e) {
+            try {
+              await downloadWithChrome({
+                url: finalUrl,
+                filename: finalFilename || undefined,
+                conflictAction: 'uniquify'
+              }, finalFilename);
+              startedCount++;
+            } catch (fallbackError) {
+              failedCount++;
+              lastErrorHint = getDownloadErrorHint(fallbackError || e);
+            }
+          }
+        } else {
+          try {
+            await downloadWithChrome({
+              url: finalUrl,
+              filename: finalFilename || undefined,
+              conflictAction: 'uniquify'
+            }, finalFilename);
+            startedCount++;
+          } catch (e) {
+            try {
+              await downloadVideoUrlOnPage(mediaItem, finalFilename);
+              pageFallbackCount++;
+              startedCount++;
+            } catch (fallbackError) {
+              failedCount++;
+              lastErrorHint = getDownloadErrorHint(fallbackError || e);
+            }
+          }
         }
 
         updateProgress(idx, urlsArray.length);
@@ -1343,6 +1375,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (blobFallbackCount > 0) {
       notify('Blob download was triggered from the source page. MediaSource/DRM blobs may still need the real stream URL.', 'info');
+    }
+    if (pageFallbackCount > 0) {
+      notify('Some video downloads were triggered from the source page after the browser download API failed.', 'info');
     }
     if (skippedVideoDownloads > 0) {
       notify('Some videos cannot be downloaded directly. Try Rescan after playback, or copy/open the detected stream URL.', 'error');
