@@ -808,8 +808,17 @@ document.addEventListener('DOMContentLoaded', () => {
       const actionBar = document.createElement('div');
       actionBar.className = 'action-bar';
 
-      const viewBtn = createMiniBtn('\uD83D\uDC41', isVideo ? 'Open video in new tab' : 'Open full image in new tab', (e) => {
+      const viewTitle = isVideo
+        ? (isBlobUrl(media.src) ? 'Preview blob video on source page' : 'Open video in new tab')
+        : 'Open full image in new tab';
+      const viewBtn = createMiniBtn('\uD83D\uDC41', viewTitle, (e) => {
         e.stopPropagation();
+        if (isVideo && isBlobUrl(media.src)) {
+          previewBlobVideoOnPage(media)
+            .then(() => notify('Blob preview opened on the source page.', 'info'))
+            .catch((error) => notify(`Blob preview failed: ${error.message || 'Unknown error'}`, 'error'));
+          return;
+        }
         openSafeUrl(media.src, ['http:', 'https:', 'data:', 'blob:']);
       });
 
@@ -827,7 +836,10 @@ document.addEventListener('DOMContentLoaded', () => {
       actionBar.append(viewBtn, linkBtn, copyBtn);
 
       if (isVideo) {
-        const previewBtn = createMiniBtn('\u25B6', media.isStream ? 'Preview is not available for stream manifests' : 'Play preview in card', (e) => {
+        const previewTitle = media.isStream
+          ? 'Preview is not available for stream manifests'
+          : (isBlobUrl(media.src) ? 'Play blob preview on source page' : 'Play preview in card');
+        const previewBtn = createMiniBtn('\u25B6', previewTitle, (e) => {
           e.stopPropagation();
           toggleVideoPreview(li, media);
         });
@@ -838,14 +850,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const videoDownloadTitle = getVideoDownloadTitle(media);
         const videoDownloadBtn = createMiniBtn('\u2B07', videoDownloadTitle, (e) => {
           e.stopPropagation();
-          if (!canDownloadVideo) {
-            notify('This video is exposed as a blob/MediaSource URL. Copy or open it; direct download is not available from the popup.', 'error');
+          if (!canDownloadVideo && !isBlobUrl(media.src)) {
+            notify('This video cannot be downloaded directly. Copy or open the URL instead.', 'error');
             return;
           }
           startDownloadProcess([media.src]);
         });
         videoDownloadBtn.classList.add('video-download-btn');
-        if (!canDownloadVideo) videoDownloadBtn.classList.add('disabled');
+        if (!canDownloadVideo && !isBlobUrl(media.src)) videoDownloadBtn.classList.add('disabled');
         actionBar.append(videoDownloadBtn);
       } else {
         const lensBtn = createMiniBtn('\uD83D\uDCF7', 'Search with Google Lens', (e) => {
@@ -942,7 +954,6 @@ document.addEventListener('DOMContentLoaded', () => {
   function canPreviewVideo(media) {
     if (!media || media.mediaType !== 'video') return false;
     if (media.isStream || isStreamMedia(media.src)) return false;
-    if (String(media.src).toLowerCase().startsWith('blob:')) return false;
     return true;
   }
 
@@ -952,15 +963,83 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function isVideoDownloadable(media) {
     if (!media || media.mediaType !== 'video') return false;
+    if (isBlobUrl(media.src)) return true;
     if (media.downloadable === false) return false;
-    return !isBlobUrl(media.src);
+    return true;
   }
 
   function getVideoDownloadTitle(media) {
-    if (!isVideoDownloadable(media)) {
-      return 'Blob/MediaSource videos cannot be downloaded directly';
+    if (isBlobUrl(media?.src)) {
+      return 'Download blob video from source page';
     }
+    if (!isVideoDownloadable(media)) return 'This video cannot be downloaded directly';
     return media.isStream ? 'Download stream manifest' : 'Download video';
+  }
+
+  function getActiveTab() {
+    return new Promise((resolve, reject) => {
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message || 'Cannot access active tab'));
+          return;
+        }
+        if (!tabs[0]?.id) {
+          reject(new Error('No active tab found'));
+          return;
+        }
+        resolve(tabs[0]);
+      });
+    });
+  }
+
+  function ensureContentScript(tabId) {
+    return new Promise((resolve, reject) => {
+      chrome.scripting.executeScript(
+        { target: { tabId }, files: ['content.js'] },
+        () => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message || 'Cannot inject content script'));
+            return;
+          }
+          resolve();
+        }
+      );
+    });
+  }
+
+  async function sendContentAction(message) {
+    const tab = await getActiveTab();
+    await ensureContentScript(tab.id);
+
+    return new Promise((resolve, reject) => {
+      chrome.tabs.sendMessage(tab.id, message, (response) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message || 'Cannot communicate with page'));
+          return;
+        }
+        resolve(response || { ok: false, error: 'No response from page' });
+      });
+    });
+  }
+
+  async function previewBlobVideoOnPage(media) {
+    const response = await sendContentAction({
+      action: 'previewBlobVideo',
+      src: media.src,
+      title: media.alt || 'Video preview'
+    });
+
+    if (!response.ok) throw new Error(response.error || 'Blob preview failed');
+  }
+
+  async function downloadBlobVideoOnPage(media, filename) {
+    const response = await sendContentAction({
+      action: 'downloadBlobVideo',
+      src: media.src,
+      filename
+    });
+
+    if (!response.ok) throw new Error(response.error || 'Blob download failed');
   }
 
   function stopVideoPreview(card) {
@@ -979,9 +1058,20 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  function toggleVideoPreview(card, media) {
+  async function toggleVideoPreview(card, media) {
     if (!canPreviewVideo(media)) {
       notify('Preview works only for direct video files. Open or copy this stream URL instead.', 'info');
+      return;
+    }
+
+    if (isBlobUrl(media.src)) {
+      hideFloatingTooltip();
+      try {
+        await previewBlobVideoOnPage(media);
+        notify('Blob preview opened on the source page.', 'info');
+      } catch (e) {
+        notify(`Blob preview failed: ${e.message || 'Unknown error'}`, 'error');
+      }
       return;
     }
 
@@ -1156,7 +1246,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function downloadIndividual(urlsArray, renameBase, folderName, shouldConvert, webpConversionTarget) {
     let idx = 1;
-    let skippedBlobVideos = 0;
+    let skippedVideoDownloads = 0;
+    let blobFallbackCount = 0;
     let streamCount = 0;
     let startedCount = 0;
     let failedCount = 0;
@@ -1170,7 +1261,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (isVideo) {
         if (!isVideoDownloadable(mediaItem)) {
-          skippedBlobVideos++;
+          skippedVideoDownloads++;
           updateProgress(idx, urlsArray.length);
           idx++;
           continue;
@@ -1179,6 +1270,21 @@ document.addEventListener('DOMContentLoaded', () => {
         if (isStreamMedia(url)) streamCount++;
 
         const finalFilename = generateFilename(url, idx, renameBase, folderName, ext);
+
+        if (isBlobUrl(url)) {
+          try {
+            await downloadBlobVideoOnPage(mediaItem, finalFilename);
+            blobFallbackCount++;
+            startedCount++;
+          } catch (e) {
+            failedCount++;
+            lastErrorHint = getDownloadErrorHint(e);
+          }
+
+          updateProgress(idx, urlsArray.length);
+          idx++;
+          continue;
+        }
 
         try {
           await downloadWithChrome({
@@ -1227,8 +1333,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (streamCount > 0) {
       notify('Stream URLs were downloaded as manifests; segmented/DRM video is not assembled.', 'info');
     }
-    if (skippedBlobVideos > 0) {
-      notify('Blob/MediaSource videos cannot be downloaded directly. Try Rescan after playback, or copy/open the detected stream URL.', 'error');
+    if (blobFallbackCount > 0) {
+      notify('Blob download was triggered from the source page. MediaSource/DRM blobs may still need the real stream URL.', 'info');
+    }
+    if (skippedVideoDownloads > 0) {
+      notify('Some videos cannot be downloaded directly. Try Rescan after playback, or copy/open the detected stream URL.', 'error');
     } else if (failedCount > 0) {
       notify(`Download failed for ${failedCount} item(s): ${lastErrorHint}`, 'error');
     } else if (startedCount > 0) {

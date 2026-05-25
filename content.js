@@ -3,7 +3,8 @@
 
 (() => {
   const INJECTION_KEY = '__proImageCollectorInjected';
-  const INJECTION_VERSION = 'media-v1';
+  const INJECTION_VERSION = 'media-v2';
+  const BLOB_PREVIEW_ID = '__proImageCollectorBlobPreview';
   const VIDEO_EXTENSIONS = new Set(['mp4', 'webm', 'mov', 'm4v', 'ogv', 'm3u8', 'mpd']);
   const STREAM_EXTENSIONS = new Set(['m3u8', 'mpd']);
   const VIDEO_URL_PATTERN = /\.(mp4|webm|mov|m4v|ogv|m3u8|mpd)(?:$|[?#])/i;
@@ -78,6 +79,26 @@
 
   function isStreamUrl(url) {
     return STREAM_EXTENSIONS.has(getExtensionFromUrl(url));
+  }
+
+  function isBlobVideoUrl(url) {
+    const resolvedUrl = resolveVideoUrl(url);
+    return Boolean(resolvedUrl && resolvedUrl.toLowerCase().startsWith('blob:'));
+  }
+
+  function sanitizeDownloadName(name, fallback = 'video') {
+    const lastSegment = String(name || '')
+      .split(/[\\/]+/)
+      .filter(Boolean)
+      .pop() || fallback;
+
+    const cleaned = lastSegment
+      .trim()
+      .replace(/[<>:"/\\|?*\u0000-\u001F]+/g, '')
+      .replace(/\s+/g, ' ')
+      .replace(/[. ]+$/g, '');
+
+    return cleaned || fallback;
   }
 
   function isVideoLikeUrl(rawUrl) {
@@ -350,6 +371,111 @@
     return [...getImages(), ...getVideos()];
   }
 
+  function closeBlobPreview() {
+    const existingOverlay = document.getElementById(BLOB_PREVIEW_ID);
+    if (existingOverlay) existingOverlay.remove();
+  }
+
+  function previewBlobVideo(rawSrc, title) {
+    const src = resolveVideoUrl(rawSrc);
+    if (!src || !isBlobVideoUrl(src)) {
+      return { ok: false, error: 'The selected video is not a page-scoped blob URL.' };
+    }
+
+    closeBlobPreview();
+
+    const overlay = document.createElement('div');
+    overlay.id = BLOB_PREVIEW_ID;
+    overlay.style.cssText = [
+      'position:fixed',
+      'inset:0',
+      'z-index:2147483647',
+      'background:rgba(0,0,0,0.88)',
+      'display:flex',
+      'align-items:center',
+      'justify-content:center',
+      'padding:24px',
+      'box-sizing:border-box'
+    ].join(';');
+
+    const panel = document.createElement('div');
+    panel.style.cssText = [
+      'position:relative',
+      'width:min(960px,96vw)',
+      'max-height:92vh',
+      'background:#000',
+      'border:1px solid rgba(255,255,255,0.25)',
+      'box-shadow:0 16px 48px rgba(0,0,0,0.55)'
+    ].join(';');
+
+    const closeButton = document.createElement('button');
+    closeButton.type = 'button';
+    closeButton.textContent = 'x';
+    closeButton.setAttribute('aria-label', 'Close video preview');
+    closeButton.style.cssText = [
+      'position:absolute',
+      'top:-14px',
+      'right:-14px',
+      'z-index:2',
+      'width:32px',
+      'height:32px',
+      'border-radius:50%',
+      'border:1px solid rgba(255,255,255,0.5)',
+      'background:#111',
+      'color:#fff',
+      'font:700 18px/1 Arial,sans-serif',
+      'cursor:pointer'
+    ].join(';');
+    closeButton.addEventListener('click', closeBlobPreview);
+
+    const video = document.createElement('video');
+    video.src = src;
+    video.controls = true;
+    video.autoplay = true;
+    video.muted = true;
+    video.playsInline = true;
+    video.setAttribute('playsinline', '');
+    video.setAttribute('aria-label', title || 'Blob video preview');
+    video.style.cssText = [
+      'display:block',
+      'width:100%',
+      'max-height:92vh',
+      'background:#000'
+    ].join(';');
+
+    panel.append(closeButton, video);
+    overlay.appendChild(panel);
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) closeBlobPreview();
+    });
+
+    document.documentElement.appendChild(overlay);
+
+    const playPromise = video.play();
+    if (playPromise && typeof playPromise.catch === 'function') {
+      playPromise.catch(() => {});
+    }
+
+    return { ok: true };
+  }
+
+  function downloadBlobVideo(rawSrc, filename) {
+    const src = resolveVideoUrl(rawSrc);
+    if (!src || !isBlobVideoUrl(src)) {
+      return { ok: false, error: 'The selected video is not a page-scoped blob URL.' };
+    }
+
+    const link = document.createElement('a');
+    link.href = src;
+    link.download = sanitizeDownloadName(filename, 'video.mp4');
+    link.style.display = 'none';
+    document.documentElement.appendChild(link);
+    link.click();
+    setTimeout(() => link.remove(), 1000);
+
+    return { ok: true };
+  }
+
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'getImages') {
       sendResponse(getImages());
@@ -357,6 +483,10 @@
       sendResponse(getVideos());
     } else if (request.action === 'getMedia') {
       sendResponse(getMedia());
+    } else if (request.action === 'previewBlobVideo') {
+      sendResponse(previewBlobVideo(request.src, request.title));
+    } else if (request.action === 'downloadBlobVideo') {
+      sendResponse(downloadBlobVideo(request.src, request.filename));
     }
     return false;
   });
