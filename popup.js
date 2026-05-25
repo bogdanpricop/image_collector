@@ -937,10 +937,12 @@ document.addEventListener('DOMContentLoaded', () => {
     videoPlaceholder.appendChild(playIcon);
     imgWrapper.appendChild(videoPlaceholder);
 
-    if (media.poster) {
+    const thumbnailSrc = media.thumbnail || media.poster;
+
+    if (thumbnailSrc) {
       const posterImg = document.createElement('img');
       posterImg.className = 'video-poster';
-      posterImg.src = media.poster;
+      posterImg.src = thumbnailSrc;
       posterImg.loading = 'eager';
       posterImg.decoding = 'async';
       posterImg.alt = media.alt || 'video poster';
@@ -1102,7 +1104,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const preview = document.createElement('video');
     preview.className = 'video-preview';
     preview.src = media.src;
-    preview.poster = media.poster || '';
+    preview.poster = media.thumbnail || media.poster || '';
     preview.controls = true;
     preview.muted = true;
     preview.loop = true;

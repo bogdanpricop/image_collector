@@ -162,6 +162,7 @@ function addVideo(videoMap, rawSrc, metadata) {
     type: 'video',
     mediaType: 'video',
     poster: resolveImageUrl(metadata.poster) || null,
+    thumbnail: resolveImageUrl(metadata.thumbnail) || resolveImageUrl(metadata.poster) || null,
     sourceType: metadata.sourceType || 'video',
     isStream: STREAM_EXTENSIONS.has(getExtensionFromUrl(src)),
     downloadable: !src.toLowerCase().startsWith('blob:')
@@ -174,10 +175,13 @@ function getImageElementSrc(img) {
 }
 
 function getVideoElementMetadata(video, sourceType) {
+  const poster = video.getAttribute('poster') || video.poster || null;
+
   return {
     link: getParentLink(video),
     alt: video.getAttribute('aria-label') || video.getAttribute('title') || 'video',
-    poster: video.getAttribute('poster') || video.poster || null,
+    poster,
+    thumbnail: poster || null,
     width: parseInt(video.getAttribute('data-w'), 10) || video.videoWidth || video.width || 0,
     height: parseInt(video.getAttribute('data-h'), 10) || video.videoHeight || video.height || 0,
     sourceType
@@ -527,6 +531,7 @@ describe('getVideos', () => {
     expect(videos.length).toBe(1);
     expect(videos[0].src).toBe('https://example.com/videos/trailer.mp4');
     expect(videos[0].poster).toBe('https://example.com/videos/poster.jpg');
+    expect(videos[0].thumbnail).toBe('https://example.com/videos/poster.jpg');
     expect(videos[0].mediaType).toBe('video');
     expect(videos[0].downloadable).toBe(true);
   });

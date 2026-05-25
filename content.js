@@ -3,11 +3,12 @@
 
 (() => {
   const INJECTION_KEY = '__proImageCollectorInjected';
-  const INJECTION_VERSION = 'media-v4';
+  const INJECTION_VERSION = 'media-v5';
   const BLOB_PREVIEW_ID = '__proImageCollectorBlobPreview';
   const RESOURCE_CACHE_KEY = '__proImageCollectorVideoResources';
   const RESOURCE_OBSERVER_KEY = '__proImageCollectorResourceObserver';
   const MAX_CACHED_VIDEO_RESOURCES = 150;
+  const VIDEO_THUMBNAIL_MAX_WIDTH = 240;
   const VIDEO_EXTENSIONS = new Set(['mp4', 'webm', 'mov', 'm4v', 'ogv', 'm3u8', 'mpd']);
   const STREAM_EXTENSIONS = new Set(['m3u8', 'mpd']);
   const VIDEO_URL_PATTERN = /\.(mp4|webm|mov|m4v|ogv|m3u8|mpd)(?:$|[?#])/i;
@@ -260,6 +261,7 @@
       type: 'video',
       mediaType: 'video',
       poster: resolveImageUrl(metadata.poster) || null,
+      thumbnail: resolveImageUrl(metadata.thumbnail) || resolveImageUrl(metadata.poster) || null,
       sourceType: metadata.sourceType || 'video',
       isStream: isStreamUrl(src),
       downloadable: !src.toLowerCase().startsWith('blob:'),
@@ -279,14 +281,46 @@
   }
 
   function getVideoElementMetadata(video, sourceType) {
+    const poster = video.getAttribute('poster') || video.poster || null;
+
     return {
       link: getParentLink(video),
       alt: video.getAttribute('aria-label') || video.getAttribute('title') || 'video',
-      poster: video.getAttribute('poster') || video.poster || null,
+      poster,
+      thumbnail: poster || captureVideoFrameThumbnail(video),
       width: video.videoWidth || video.width || parseInt(video.getAttribute('width'), 10) || 0,
       height: video.videoHeight || video.height || parseInt(video.getAttribute('height'), 10) || 0,
       sourceType
     };
+  }
+
+  function captureVideoFrameThumbnail(video) {
+    if (!video || video.readyState < 2 || !video.videoWidth || !video.videoHeight) return null;
+
+    try {
+      const scale = Math.min(1, VIDEO_THUMBNAIL_MAX_WIDTH / video.videoWidth);
+      const width = Math.max(1, Math.round(video.videoWidth * scale));
+      const height = Math.max(1, Math.round(video.videoHeight * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return null;
+
+      ctx.drawImage(video, 0, 0, width, height);
+      return canvas.toDataURL('image/jpeg', 0.66);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function getBestPageVideoMetadata(sourceType = 'resource') {
+    return Array.from(document.querySelectorAll('video'))
+      .map(video => ({ video, score: scorePageVideoElement(video) }))
+      .filter(item => item.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .map(item => getVideoElementMetadata(item.video, sourceType))[0] || {};
   }
 
   function getImages() {
@@ -418,12 +452,15 @@
   function collectPerformanceVideos(videoMap) {
     if (!window.performance || typeof window.performance.getEntriesByType !== 'function') return;
 
+    const pageVideoMetadata = getBestPageVideoMetadata('resource');
+
     window.performance.getEntriesByType('resource').forEach((entry) => {
       if (!entry?.name) return;
       if (entry.initiatorType !== 'video' && !isVideoLikeUrl(entry.name)) return;
       cacheVideoResource(entry.name);
 
       addVideo(videoMap, entry.name, {
+        ...pageVideoMetadata,
         alt: 'video resource',
         sourceType: 'resource',
         resourceIndex: getCachedResourceIndex(entry.name)
@@ -432,6 +469,7 @@
 
     getVideoResourceCache().forEach((url) => {
       addVideo(videoMap, url, {
+        ...pageVideoMetadata,
         alt: 'video resource',
         sourceType: 'resource',
         resourceIndex: getCachedResourceIndex(url)
@@ -443,6 +481,7 @@
     const maxTotalChars = 2 * 1024 * 1024;
     let totalChars = 0;
     const absoluteUrlPattern = /(?:https?:)?\/\/[^"'<>\s\\]+/gi;
+    const pageVideoMetadata = getBestPageVideoMetadata('metadata');
 
     document.querySelectorAll('script, template').forEach((el) => {
       if (totalChars >= maxTotalChars) return;
@@ -461,6 +500,7 @@
         const rawUrl = match[0].startsWith('//') ? `${location.protocol}${match[0]}` : match[0];
         if (!isVideoLikeUrl(rawUrl)) continue;
         addVideo(videoMap, rawUrl, {
+          ...pageVideoMetadata,
           alt: 'video metadata',
           sourceType: 'metadata'
         });
