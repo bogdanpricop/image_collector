@@ -88,7 +88,50 @@ function isVideoLikeUrl(rawUrl) {
   if (!resolvedUrl) return false;
   if (resolvedUrl.toLowerCase().startsWith('data:video/') || resolvedUrl.toLowerCase().startsWith('blob:')) return true;
   if (VIDEO_URL_PATTERN.test(normalizedRawUrl) || VIDEO_URL_PATTERN.test(resolvedUrl)) return true;
-  return VIDEO_EXTENSIONS.has(getExtensionFromUrl(resolvedUrl));
+
+  try {
+    const parsedUrl = new URL(resolvedUrl);
+    return VIDEO_EXTENSIONS.has(getExtensionFromUrl(resolvedUrl)) ||
+      hasVideoMimeHint(parsedUrl) ||
+      isKnownVideoCdnUrl(parsedUrl);
+  } catch (e) {
+    return false;
+  }
+}
+
+function hasVideoMimeHint(parsedUrl) {
+  for (const [rawKey, rawValue] of parsedUrl.searchParams.entries()) {
+    const key = rawKey.toLowerCase();
+    const value = rawValue.toLowerCase();
+
+    if ((key.includes('mime') || key === 'type' || key === 'format' || key === 'content_type') &&
+        (value.includes('video') || VIDEO_EXTENSIONS.has(value.replace(/^video[_/.-]?/, '')))) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function isKnownVideoCdnUrl(parsedUrl) {
+  const host = parsedUrl.hostname.toLowerCase();
+  const path = parsedUrl.pathname.toLowerCase();
+
+  const looksLikeTiktokHost =
+    host.includes('tiktok') ||
+    host.includes('byteoversea') ||
+    host.includes('bytecdn') ||
+    host.includes('ibytedtos') ||
+    host.includes('snssdk') ||
+    (host.includes('akamaized') && /^v\d+[a-z-]*\./.test(host));
+
+  if (!looksLikeTiktokHost) return false;
+
+  return path.includes('/video/') ||
+    path.includes('/tos/') ||
+    path.includes('/tos-') ||
+    parsedUrl.searchParams.has('x-expires') ||
+    parsedUrl.searchParams.has('x-signature');
 }
 
 function addImage(imageMap, rawSrc, metadata) {
@@ -246,11 +289,15 @@ function getVideos() {
     });
   });
 
-  const absoluteVideoUrlPattern = /(?:https?:)?\/\/[^"'<>\s\\]+?\.(?:mp4|webm|mov|m4v|ogv|m3u8|mpd)(?:\?[^"'<>\s\\]*)?/gi;
+  const absoluteUrlPattern = /(?:https?:)?\/\/[^"'<>\s\\]+/gi;
   document.querySelectorAll('script, template').forEach((el) => {
-    const text = (el.textContent || '').replace(/\\\//g, '/');
-    for (const match of text.matchAll(absoluteVideoUrlPattern)) {
+    const text = (el.textContent || '')
+      .replace(/\\u002[fF]/g, '/')
+      .replace(/\\\//g, '/');
+
+    for (const match of text.matchAll(absoluteUrlPattern)) {
       const rawUrl = match[0].startsWith('//') ? `${location.protocol}${match[0]}` : match[0];
+      if (!isVideoLikeUrl(rawUrl)) continue;
       addVideo(videoMap, rawUrl, {
         alt: 'video metadata',
         sourceType: 'metadata'
@@ -527,6 +574,19 @@ describe('getVideos', () => {
     `;
     const videos = getVideos();
     expect(videos[0].src).toBe('https://cdn.example.com/campaign/hero.mp4?download=1');
+    expect(videos[0].sourceType).toBe('metadata');
+  });
+
+  it('should extract TikTok-style video URLs without file extensions', () => {
+    document.body.innerHTML = `
+      <script type="application/json">
+        {"playAddr":"https:\\u002F\\u002Fv16-webapp-prime.tiktok.com\\u002Fvideo\\u002Ftos\\u002Fuseast2a\\u002Ftos-useast2a-ve-0068c004\\u002Fclip\\u002F?mime_type=video_mp4&x-expires=1800000000&x-signature=abc"}
+      </script>
+    `;
+    const videos = getVideos();
+    expect(videos.length).toBe(1);
+    expect(videos[0].src).toContain('v16-webapp-prime.tiktok.com/video/tos/');
+    expect(videos[0].src).toContain('mime_type=video_mp4');
     expect(videos[0].sourceType).toBe('metadata');
   });
 

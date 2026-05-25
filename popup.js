@@ -1040,6 +1040,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     if (!response.ok) throw new Error(response.error || 'Blob download failed');
+    return response;
   }
 
   function stopVideoPreview(card) {
@@ -1273,7 +1274,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (isBlobUrl(url)) {
           try {
-            await downloadBlobVideoOnPage(mediaItem, finalFilename);
+            const blobResponse = await downloadBlobVideoOnPage(mediaItem, finalFilename);
+            if (blobResponse.downloadUrl) {
+              await downloadWithChrome({
+                url: blobResponse.downloadUrl,
+                filename: finalFilename || undefined,
+                conflictAction: 'uniquify'
+              }, finalFilename);
+            }
             blobFallbackCount++;
             startedCount++;
           } catch (e) {

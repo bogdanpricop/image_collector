@@ -3,8 +3,11 @@
 
 (() => {
   const INJECTION_KEY = '__proImageCollectorInjected';
-  const INJECTION_VERSION = 'media-v2';
+  const INJECTION_VERSION = 'media-v3';
   const BLOB_PREVIEW_ID = '__proImageCollectorBlobPreview';
+  const RESOURCE_CACHE_KEY = '__proImageCollectorVideoResources';
+  const RESOURCE_OBSERVER_KEY = '__proImageCollectorResourceObserver';
+  const MAX_CACHED_VIDEO_RESOURCES = 150;
   const VIDEO_EXTENSIONS = new Set(['mp4', 'webm', 'mov', 'm4v', 'ogv', 'm3u8', 'mpd']);
   const STREAM_EXTENSIONS = new Set(['m3u8', 'mpd']);
   const VIDEO_URL_PATTERN = /\.(mp4|webm|mov|m4v|ogv|m3u8|mpd)(?:$|[?#])/i;
@@ -81,6 +84,41 @@
     return STREAM_EXTENSIONS.has(getExtensionFromUrl(url));
   }
 
+  function hasVideoMimeHint(parsedUrl) {
+    for (const [rawKey, rawValue] of parsedUrl.searchParams.entries()) {
+      const key = rawKey.toLowerCase();
+      const value = rawValue.toLowerCase();
+
+      if ((key.includes('mime') || key === 'type' || key === 'format' || key === 'content_type') &&
+          (value.includes('video') || VIDEO_EXTENSIONS.has(value.replace(/^video[_/.-]?/, '')))) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  function isKnownVideoCdnUrl(parsedUrl) {
+    const host = parsedUrl.hostname.toLowerCase();
+    const path = parsedUrl.pathname.toLowerCase();
+
+    const looksLikeTiktokHost =
+      host.includes('tiktok') ||
+      host.includes('byteoversea') ||
+      host.includes('bytecdn') ||
+      host.includes('ibytedtos') ||
+      host.includes('snssdk') ||
+      (host.includes('akamaized') && /^v\d+[a-z-]*\./.test(host));
+
+    if (!looksLikeTiktokHost) return false;
+
+    return path.includes('/video/') ||
+      path.includes('/tos/') ||
+      path.includes('/tos-') ||
+      parsedUrl.searchParams.has('x-expires') ||
+      parsedUrl.searchParams.has('x-signature');
+  }
+
   function isBlobVideoUrl(url) {
     const resolvedUrl = resolveVideoUrl(url);
     return Boolean(resolvedUrl && resolvedUrl.toLowerCase().startsWith('blob:'));
@@ -119,13 +157,76 @@
 
     try {
       const parsedUrl = new URL(resolvedUrl);
-      const search = parsedUrl.search.toLowerCase();
       const extension = getExtensionFromUrl(parsedUrl.href);
       return VIDEO_EXTENSIONS.has(extension) ||
-        /(?:format|type|mime|content_type)=video/.test(search) ||
-        /(?:format|type|ext)=(mp4|webm|mov|m4v|ogv|m3u8|mpd)\b/.test(search);
+        hasVideoMimeHint(parsedUrl) ||
+        isKnownVideoCdnUrl(parsedUrl);
     } catch (e) {
       return false;
+    }
+  }
+
+  function getVideoResourceCache() {
+    if (!Array.isArray(window[RESOURCE_CACHE_KEY])) {
+      window[RESOURCE_CACHE_KEY] = [];
+    }
+    return window[RESOURCE_CACHE_KEY];
+  }
+
+  function cacheVideoResource(rawUrl) {
+    if (!isVideoLikeUrl(rawUrl)) return;
+
+    const resolvedUrl = resolveVideoUrl(rawUrl);
+    if (!resolvedUrl || resolvedUrl.toLowerCase().startsWith('blob:')) return;
+
+    const cache = getVideoResourceCache();
+    const existingIndex = cache.indexOf(resolvedUrl);
+    if (existingIndex !== -1) {
+      cache.splice(existingIndex, 1);
+    }
+
+    cache.push(resolvedUrl);
+    if (cache.length > MAX_CACHED_VIDEO_RESOURCES) {
+      cache.splice(0, cache.length - MAX_CACHED_VIDEO_RESOURCES);
+    }
+  }
+
+  function getCachedResourceIndex(rawUrl) {
+    const resolvedUrl = resolveVideoUrl(rawUrl);
+    if (!resolvedUrl) return -1;
+    return getVideoResourceCache().indexOf(resolvedUrl);
+  }
+
+  function startVideoResourceObserver() {
+    if (!window.performance) return;
+
+    try {
+      if (typeof window.performance.setResourceTimingBufferSize === 'function') {
+        window.performance.setResourceTimingBufferSize(2000);
+      }
+
+      if (typeof window.performance.getEntriesByType === 'function') {
+        window.performance.getEntriesByType('resource').forEach((entry) => {
+          if (entry?.name && (entry.initiatorType === 'video' || isVideoLikeUrl(entry.name))) {
+            cacheVideoResource(entry.name);
+          }
+        });
+      }
+
+      if (window[RESOURCE_OBSERVER_KEY] || typeof PerformanceObserver !== 'function') return;
+
+      const observer = new PerformanceObserver((list) => {
+        list.getEntries().forEach((entry) => {
+          if (entry?.name && (entry.initiatorType === 'video' || isVideoLikeUrl(entry.name))) {
+            cacheVideoResource(entry.name);
+          }
+        });
+      });
+
+      observer.observe({ type: 'resource', buffered: true });
+      window[RESOURCE_OBSERVER_KEY] = observer;
+    } catch (e) {
+      // Some pages restrict PerformanceObserver usage; scanning still works from DOM/script metadata.
     }
   }
 
@@ -161,7 +262,8 @@
       poster: resolveImageUrl(metadata.poster) || null,
       sourceType: metadata.sourceType || 'video',
       isStream: isStreamUrl(src),
-      downloadable: !src.toLowerCase().startsWith('blob:')
+      downloadable: !src.toLowerCase().startsWith('blob:'),
+      resourceIndex: typeof metadata.resourceIndex === 'number' ? metadata.resourceIndex : -1
     });
   }
 
@@ -319,10 +421,20 @@
     window.performance.getEntriesByType('resource').forEach((entry) => {
       if (!entry?.name) return;
       if (entry.initiatorType !== 'video' && !isVideoLikeUrl(entry.name)) return;
+      cacheVideoResource(entry.name);
 
       addVideo(videoMap, entry.name, {
         alt: 'video resource',
-        sourceType: 'resource'
+        sourceType: 'resource',
+        resourceIndex: getCachedResourceIndex(entry.name)
+      });
+    });
+
+    getVideoResourceCache().forEach((url) => {
+      addVideo(videoMap, url, {
+        alt: 'video resource',
+        sourceType: 'resource',
+        resourceIndex: getCachedResourceIndex(url)
       });
     });
   }
@@ -330,7 +442,7 @@
   function collectTextVideoUrls(videoMap) {
     const maxTotalChars = 2 * 1024 * 1024;
     let totalChars = 0;
-    const absoluteVideoUrlPattern = /(?:https?:)?\/\/[^"'<>\s\\]+?\.(?:mp4|webm|mov|m4v|ogv|m3u8|mpd)(?:\?[^"'<>\s\\]*)?/gi;
+    const absoluteUrlPattern = /(?:https?:)?\/\/[^"'<>\s\\]+/gi;
 
     document.querySelectorAll('script, template').forEach((el) => {
       if (totalChars >= maxTotalChars) return;
@@ -339,11 +451,15 @@
       if (!rawText) return;
 
       const remainingChars = maxTotalChars - totalChars;
-      const text = rawText.slice(0, remainingChars).replace(/\\\//g, '/');
+      const text = rawText
+        .slice(0, remainingChars)
+        .replace(/\\u002[fF]/g, '/')
+        .replace(/\\\//g, '/');
       totalChars += text.length;
 
-      for (const match of text.matchAll(absoluteVideoUrlPattern)) {
+      for (const match of text.matchAll(absoluteUrlPattern)) {
         const rawUrl = match[0].startsWith('//') ? `${location.protocol}${match[0]}` : match[0];
+        if (!isVideoLikeUrl(rawUrl)) continue;
         addVideo(videoMap, rawUrl, {
           alt: 'video metadata',
           sourceType: 'metadata'
@@ -369,6 +485,43 @@
 
   function getMedia() {
     return [...getImages(), ...getVideos()];
+  }
+
+  function scoreDownloadCandidate(video) {
+    const src = video?.src || '';
+    if (!src || src.toLowerCase().startsWith('blob:') || src.toLowerCase().startsWith('data:')) {
+      return -1;
+    }
+
+    let score = 0;
+    const extension = getExtensionFromUrl(src);
+
+    if (!video.isStream) score += 80;
+    if (extension === 'mp4' || extension === 'webm') score += 40;
+    if (video.sourceType === 'resource') score += 35;
+    if (video.sourceType === 'metadata') score += 25;
+    if (video.sourceType === 'video' || video.sourceType === 'source') score += 15;
+    if (typeof video.resourceIndex === 'number' && video.resourceIndex > -1) {
+      score += Math.min(video.resourceIndex, 50);
+    }
+
+    try {
+      const parsedUrl = new URL(src, document.baseURI);
+      if (hasVideoMimeHint(parsedUrl)) score += 45;
+      if (isKnownVideoCdnUrl(parsedUrl)) score += 45;
+      if (parsedUrl.searchParams.has('x-expires') || parsedUrl.searchParams.has('x-signature')) score += 10;
+    } catch (e) {
+      // Keep the base score for already-resolved URLs.
+    }
+
+    return score;
+  }
+
+  function findBestDownloadableVideoCandidate() {
+    return getVideos()
+      .map(video => ({ video, score: scoreDownloadCandidate(video) }))
+      .filter(item => item.score >= 0)
+      .sort((a, b) => b.score - a.score)[0]?.video || null;
   }
 
   function closeBlobPreview() {
@@ -465,6 +618,15 @@
       return { ok: false, error: 'The selected video is not a page-scoped blob URL.' };
     }
 
+    const candidate = findBestDownloadableVideoCandidate();
+    if (candidate?.src) {
+      return {
+        ok: true,
+        downloadUrl: candidate.src,
+        sourceType: candidate.sourceType || 'resource'
+      };
+    }
+
     const link = document.createElement('a');
     link.href = src;
     link.download = sanitizeDownloadName(filename, 'video.mp4');
@@ -475,6 +637,8 @@
 
     return { ok: true };
   }
+
+  startVideoResourceObserver();
 
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'getImages') {
