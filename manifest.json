@@ -3,7 +3,29 @@
   "name": "Pro Image Collector",
   "version": "8.0",
   "description": "Extract, filter, edit, and bulk-download images plus direct public video URLs. Supports WebP conversion, ZIP, Lens, and TinEye.",
-  "permissions": ["activeTab", "scripting", "downloads", "storage"],
+  "permissions": ["activeTab", "scripting", "downloads", "storage", "webRequest"],
+  "host_permissions": [
+    "*://*.x.com/*",
+    "*://*.twitter.com/*",
+    "*://*.twimg.com/*",
+    "*://*.youtube.com/*",
+    "*://*.youtu.be/*",
+    "*://*.youtube-nocookie.com/*",
+    "*://*.googlevideo.com/*",
+    "*://*.ytimg.com/*",
+    "*://*.tiktok.com/*",
+    "*://*.tiktokv.com/*",
+    "*://*.tiktokcdn.com/*",
+    "*://*.byteoversea.com/*",
+    "*://*.bytecdn.com/*",
+    "*://*.ibytedtos.com/*",
+    "*://*.snssdk.com/*",
+    "*://*.muscdn.com/*",
+    "*://*.akamaized.net/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
   "action": {
     "default_popup": "popup.html",
     "default_icon": {

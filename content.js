@@ -3,7 +3,7 @@
 
 (() => {
   const INJECTION_KEY = '__proImageCollectorInjected';
-  const INJECTION_VERSION = 'media-v7';
+  const INJECTION_VERSION = 'media-v9';
   const BLOB_PREVIEW_ID = '__proImageCollectorBlobPreview';
   const RESOURCE_CACHE_KEY = '__proImageCollectorVideoResources';
   const RESOURCE_OBSERVER_KEY = '__proImageCollectorResourceObserver';
@@ -90,8 +90,8 @@
     try {
       const host = new URL(rawUrl, document.baseURI).hostname.toLowerCase();
       if (host.includes('twitter.com') || host === 'x.com' || host.endsWith('.x.com') || host.includes('twimg.com')) return 'twitter';
-      if (host.includes('youtube.com') || host.includes('youtu.be') || host.includes('googlevideo.com') || host.includes('ytimg.com')) return 'youtube';
-      if (host.includes('tiktok') || host.includes('byteoversea') || host.includes('bytecdn') || host.includes('ibytedtos')) return 'tiktok';
+      if (host.includes('youtube.com') || host.includes('youtu.be') || host.includes('youtube-nocookie.com') || host.includes('googlevideo.com') || host.includes('ytimg.com')) return 'youtube';
+      if (host.includes('tiktok') || host.includes('tiktokv') || host.includes('byteoversea') || host.includes('bytecdn') || host.includes('ibytedtos') || host.includes('snssdk') || host.includes('muscdn')) return 'tiktok';
       return '';
     } catch (e) {
       return '';
@@ -118,9 +118,11 @@
 
     const looksLikeTiktokHost =
       host.includes('tiktok') ||
+      host.includes('tiktokv') ||
       host.includes('byteoversea') ||
       host.includes('bytecdn') ||
       host.includes('ibytedtos') ||
+      host.includes('muscdn') ||
       host.includes('snssdk') ||
       (host.includes('akamaized') && /^v\d+[a-z-]*\./.test(host));
 
@@ -839,13 +841,80 @@
     }
   }
 
+  function focusPageVideoPreview(video, title) {
+    if (!video) {
+      return { ok: false, error: 'No page video player was found.' };
+    }
+
+    closeBlobPreview();
+
+    const previousOutline = video.style.outline;
+    const previousBoxShadow = video.style.boxShadow;
+    const previousControls = video.controls;
+
+    try {
+      video.scrollIntoView({ block: 'center', inline: 'center', behavior: 'smooth' });
+    } catch (e) {
+      video.scrollIntoView();
+    }
+
+    video.style.outline = '4px solid #0d6efd';
+    video.style.boxShadow = '0 0 0 8px rgba(13,110,253,0.28)';
+    video.controls = true;
+
+    if (video.paused) {
+      video.muted = true;
+      playPreviewVideo(video);
+    }
+
+    const label = document.createElement('div');
+    label.id = BLOB_PREVIEW_ID;
+    label.textContent = title || 'Video preview';
+    label.style.cssText = [
+      'position:fixed',
+      'left:50%',
+      'bottom:24px',
+      'transform:translateX(-50%)',
+      'z-index:2147483647',
+      'background:rgba(0,0,0,0.86)',
+      'color:#fff',
+      'padding:8px 12px',
+      'border-radius:6px',
+      'font:600 13px/1.3 Arial,sans-serif',
+      'pointer-events:none',
+      'box-shadow:0 8px 24px rgba(0,0,0,0.35)'
+    ].join(';');
+    document.documentElement.appendChild(label);
+
+    setTimeout(() => {
+      if (video.isConnected) {
+        video.style.outline = previousOutline;
+        video.style.boxShadow = previousBoxShadow;
+        video.controls = previousControls;
+      }
+      closeBlobPreview();
+    }, 10000);
+
+    return {
+      ok: true,
+      method: 'source-player',
+      paused: video.paused,
+      currentTime: video.currentTime || 0
+    };
+  }
+
   function previewVideo(rawSrc, title) {
     const src = resolveVideoUrl(rawSrc);
     if (!src || !isVideoLikeUrl(src)) {
       return { ok: false, error: 'The selected URL is not recognized as video.' };
     }
 
+    const platform = getPlatformFromUrl(src) || getPlatformFromUrl(location.href);
     const sourceVideo = findPageVideoElementForBlob(src);
+    if (sourceVideo && (platform === 'youtube' || platform === 'twitter' || platform === 'tiktok' || isBlobVideoUrl(src))) {
+      return focusPageVideoPreview(sourceVideo, title);
+    }
+
     if (sourceVideo && typeof sourceVideo.captureStream === 'function') {
       const stream = sourceVideo.captureStream();
       if (stream && stream.getTracks().length > 0) {

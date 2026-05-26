@@ -753,17 +753,79 @@ document.addEventListener('DOMContentLoaded', () => {
               emptyState.style.display = 'flex';
               return;
             }
-            if (response && response.length > 0) {
-              allImages = response;
-              renderImages();
-            } else {
-              statusDiv.textContent = 'No media found.';
-              emptyState.style.display = 'flex';
-            }
+
+            getCapturedMedia(tabId)
+              .then((capturedMedia) => {
+                allImages = mergeMediaItems(response || [], capturedMedia);
+                if (allImages.length > 0) {
+                  renderImages();
+                } else {
+                  statusDiv.textContent = 'No media found.';
+                  emptyState.style.display = 'flex';
+                }
+              })
+              .catch(() => {
+                allImages = response || [];
+                if (allImages.length > 0) {
+                  renderImages();
+                } else {
+                  statusDiv.textContent = 'No media found.';
+                  emptyState.style.display = 'flex';
+                }
+              });
           });
         }
       );
     });
+  }
+
+  function getCapturedMedia(tabId) {
+    return new Promise((resolve) => {
+      chrome.runtime.sendMessage({ action: 'getCapturedMedia', tabId }, (response) => {
+        if (chrome.runtime.lastError || !response?.ok) {
+          resolve([]);
+          return;
+        }
+
+        resolve(Array.isArray(response.media) ? response.media : []);
+      });
+    });
+  }
+
+  function mergeMediaItems(contentMedia, capturedMedia) {
+    const merged = new Map();
+    const contentItems = Array.isArray(contentMedia) ? contentMedia : [];
+    const capturedItems = Array.isArray(capturedMedia) ? capturedMedia : [];
+
+    contentItems.forEach((item) => {
+      if (item?.src) merged.set(item.src, item);
+    });
+
+    const videoFallbacks = contentItems.filter(item => item?.mediaType === 'video');
+
+    capturedItems.forEach((item) => {
+      if (!item?.src) return;
+
+      const platformFallback = videoFallbacks.find(video => video.platform && video.platform === item.platform);
+      const genericFallback = videoFallbacks.find(video => video.thumbnail || video.poster);
+      const fallback = platformFallback || genericFallback || {};
+      const existing = merged.get(item.src);
+
+      merged.set(item.src, {
+        ...fallback,
+        ...existing,
+        ...item,
+        alt: item.alt || existing?.alt || fallback.alt || 'video request',
+        poster: item.poster || existing?.poster || fallback.poster || null,
+        thumbnail: item.thumbnail || existing?.thumbnail || fallback.thumbnail || fallback.poster || null,
+        width: item.width || existing?.width || fallback.width || 0,
+        height: item.height || existing?.height || fallback.height || 0,
+        mediaType: 'video',
+        type: 'video'
+      });
+    });
+
+    return Array.from(merged.values());
   }
 
   function getActiveFilters() {
@@ -1261,7 +1323,7 @@ document.addEventListener('DOMContentLoaded', () => {
     return mediaType === 'video' ? 'mp4' : 'jpg';
   }
 
-  function downloadWithChrome(options, label) {
+  function startChromeDownload(options, label) {
     return new Promise((resolve, reject) => {
       chrome.downloads.download(options, (downloadId) => {
         const err = chrome.runtime.lastError;
@@ -1279,6 +1341,54 @@ document.addEventListener('DOMContentLoaded', () => {
         resolve(downloadId);
       });
     });
+  }
+
+  async function downloadWithChrome(options, label) {
+    try {
+      return await startChromeDownload(options, label);
+    } catch (e) {
+      if (Array.isArray(options.headers) && options.headers.length > 0) {
+        const retryOptions = { ...options };
+        delete retryOptions.headers;
+        return startChromeDownload(retryOptions, label);
+      }
+      throw e;
+    }
+  }
+
+  function buildVideoDownloadHeaders(mediaItem, pageUrl) {
+    if (!mediaItem?.src || !/^https?:\/\//i.test(mediaItem.src) || !/^https?:\/\//i.test(pageUrl || '')) {
+      return [];
+    }
+
+    const headers = [
+      { name: 'Referer', value: pageUrl },
+      { name: 'Accept', value: 'video/webm,video/mp4,video/*;q=0.9,*/*;q=0.8' }
+    ];
+
+    try {
+      const pageOrigin = new URL(pageUrl).origin;
+      if (pageOrigin && pageOrigin !== 'null') {
+        headers.push({ name: 'Origin', value: pageOrigin });
+      }
+    } catch (e) {
+      // Referer is enough when the active tab URL cannot be parsed.
+    }
+
+    return headers;
+  }
+
+  function buildVideoDownloadOptions(url, filename, mediaItem, pageUrl) {
+    const options = {
+      url,
+      filename: filename || undefined,
+      conflictAction: 'uniquify'
+    };
+
+    const headers = buildVideoDownloadHeaders(mediaItem, pageUrl);
+    if (headers.length > 0) options.headers = headers;
+
+    return options;
   }
 
   function getDownloadErrorHint(error) {
@@ -1301,6 +1411,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let startedCount = 0;
     let failedCount = 0;
     let lastErrorHint = '';
+    const hasVideoDownloads = urlsArray.some(url => isVideoMedia(url));
+    const activeTab = hasVideoDownloads ? await getActiveTab().catch(() => null) : null;
+    const pageUrl = activeTab?.url || '';
 
     for (const url of urlsArray) {
       const mediaItem = getMediaItem(url);
@@ -1319,7 +1432,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (isStreamMedia(url)) streamCount++;
 
         const finalFilename = generateFilename(url, idx, renameBase, folderName, ext);
-        const shouldUsePageDownload = mediaItem.sourceType === 'resource' || mediaItem.sourceType === 'metadata';
+        const shouldUsePageDownload = mediaItem.sourceType === 'resource' ||
+          mediaItem.sourceType === 'metadata' ||
+          mediaItem.sourceType === 'network';
 
         if (isBlobUrl(url)) {
           try {
@@ -1329,11 +1444,10 @@ document.addEventListener('DOMContentLoaded', () => {
           } catch (e) {
             if (e.fallbackUrl) {
               try {
-                await downloadWithChrome({
-                  url: e.fallbackUrl,
-                  filename: finalFilename || undefined,
-                  conflictAction: 'uniquify'
-                }, finalFilename);
+                await downloadWithChrome(
+                  buildVideoDownloadOptions(e.fallbackUrl, finalFilename, mediaItem, pageUrl),
+                  finalFilename
+                );
                 startedCount++;
               } catch (fallbackError) {
                 failedCount++;
@@ -1358,11 +1472,10 @@ document.addEventListener('DOMContentLoaded', () => {
           } catch (e) {
             const fallbackUrl = e.fallbackUrl || finalUrl;
             try {
-              await downloadWithChrome({
-                url: fallbackUrl,
-                filename: finalFilename || undefined,
-                conflictAction: 'uniquify'
-              }, finalFilename);
+              await downloadWithChrome(
+                buildVideoDownloadOptions(fallbackUrl, finalFilename, mediaItem, pageUrl),
+                finalFilename
+              );
               startedCount++;
             } catch (fallbackError) {
               failedCount++;
@@ -1371,11 +1484,10 @@ document.addEventListener('DOMContentLoaded', () => {
           }
         } else {
           try {
-            await downloadWithChrome({
-              url: finalUrl,
-              filename: finalFilename || undefined,
-              conflictAction: 'uniquify'
-            }, finalFilename);
+            await downloadWithChrome(
+              buildVideoDownloadOptions(finalUrl, finalFilename, mediaItem, pageUrl),
+              finalFilename
+            );
             startedCount++;
           } catch (e) {
             try {

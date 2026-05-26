@@ -9,6 +9,7 @@ const runtimeFiles = [
   'popup.html',
   'popup.css',
   'popup.js',
+  'background.js',
   'content.js',
   'utils.js',
   'jszip.min.js',
