@@ -814,9 +814,15 @@ document.addEventListener('DOMContentLoaded', () => {
       const viewBtn = createMiniBtn('\uD83D\uDC41', viewTitle, (e) => {
         e.stopPropagation();
         if (isVideo && isBlobUrl(media.src)) {
-          previewBlobVideoOnPage(media)
-            .then(() => notify('Blob preview opened on the source page.', 'info'))
-            .catch((error) => notify(`Blob preview failed: ${error.message || 'Unknown error'}`, 'error'));
+          previewVideoOnPage(media)
+            .then(() => notify('Video preview opened on the source page.', 'info'))
+            .catch((error) => notify(`Video preview failed: ${error.message || 'Unknown error'}`, 'error'));
+          return;
+        }
+        if (isVideo && shouldPreviewOnSourcePage(media)) {
+          previewVideoOnPage(media)
+            .then(() => notify('Video preview opened on the source page.', 'info'))
+            .catch((error) => notify(`Video preview failed: ${error.message || 'Unknown error'}`, 'error'));
           return;
         }
         openSafeUrl(media.src, ['http:', 'https:', 'data:', 'blob:']);
@@ -981,6 +987,13 @@ document.addEventListener('DOMContentLoaded', () => {
     return media.isStream ? 'Download stream manifest' : 'Download video';
   }
 
+  function shouldPreviewOnSourcePage(media) {
+    if (!media || media.mediaType !== 'video') return false;
+    if (isBlobUrl(media.src)) return true;
+    if (media.platform === 'youtube' || media.platform === 'twitter' || media.platform === 'tiktok') return true;
+    return media.sourceType === 'resource' || media.sourceType === 'metadata';
+  }
+
   function getActiveTab() {
     return new Promise((resolve, reject) => {
       chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -1037,6 +1050,16 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!response.ok) throw new Error(response.error || 'Blob preview failed');
   }
 
+  async function previewVideoOnPage(media) {
+    const response = await sendContentAction({
+      action: 'previewVideo',
+      src: media.src,
+      title: media.alt || 'Video preview'
+    });
+
+    if (!response.ok) throw new Error(response.error || 'Video preview failed');
+  }
+
   async function downloadBlobVideoOnPage(media, filename) {
     const response = await sendContentAction({
       action: 'downloadBlobVideo',
@@ -1044,7 +1067,11 @@ document.addEventListener('DOMContentLoaded', () => {
       filename
     });
 
-    if (!response.ok) throw new Error(response.error || 'Blob download failed');
+    if (!response.ok) {
+      const error = new Error(response.error || 'Blob download failed');
+      error.fallbackUrl = response.fallbackUrl;
+      throw error;
+    }
     return response;
   }
 
@@ -1055,7 +1082,11 @@ document.addEventListener('DOMContentLoaded', () => {
       filename
     });
 
-    if (!response.ok) throw new Error(response.error || 'Video download failed');
+    if (!response.ok) {
+      const error = new Error(response.error || 'Video download failed');
+      error.fallbackUrl = response.fallbackUrl;
+      throw error;
+    }
     return response;
   }
 
@@ -1081,13 +1112,13 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    if (isBlobUrl(media.src)) {
+    if (shouldPreviewOnSourcePage(media)) {
       hideFloatingTooltip();
       try {
-        await previewBlobVideoOnPage(media);
-        notify('Blob preview opened on the source page.', 'info');
+        await previewVideoOnPage(media);
+        notify('Video preview opened on the source page.', 'info');
       } catch (e) {
-        notify(`Blob preview failed: ${e.message || 'Unknown error'}`, 'error');
+        notify(`Video preview failed: ${e.message || 'Unknown error'}`, 'error');
       }
       return;
     }
@@ -1296,8 +1327,22 @@ document.addEventListener('DOMContentLoaded', () => {
             blobFallbackCount++;
             startedCount++;
           } catch (e) {
-            failedCount++;
-            lastErrorHint = getDownloadErrorHint(e);
+            if (e.fallbackUrl) {
+              try {
+                await downloadWithChrome({
+                  url: e.fallbackUrl,
+                  filename: finalFilename || undefined,
+                  conflictAction: 'uniquify'
+                }, finalFilename);
+                startedCount++;
+              } catch (fallbackError) {
+                failedCount++;
+                lastErrorHint = getDownloadErrorHint(fallbackError || e);
+              }
+            } else {
+              failedCount++;
+              lastErrorHint = getDownloadErrorHint(e);
+            }
           }
 
           updateProgress(idx, urlsArray.length);
@@ -1311,9 +1356,10 @@ document.addEventListener('DOMContentLoaded', () => {
             pageFallbackCount++;
             startedCount++;
           } catch (e) {
+            const fallbackUrl = e.fallbackUrl || finalUrl;
             try {
               await downloadWithChrome({
-                url: finalUrl,
+                url: fallbackUrl,
                 filename: finalFilename || undefined,
                 conflictAction: 'uniquify'
               }, finalFilename);

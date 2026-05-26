@@ -3,7 +3,7 @@
 
 (() => {
   const INJECTION_KEY = '__proImageCollectorInjected';
-  const INJECTION_VERSION = 'media-v6';
+  const INJECTION_VERSION = 'media-v7';
   const BLOB_PREVIEW_ID = '__proImageCollectorBlobPreview';
   const RESOURCE_CACHE_KEY = '__proImageCollectorVideoResources';
   const RESOURCE_OBSERVER_KEY = '__proImageCollectorResourceObserver';
@@ -713,7 +713,7 @@
   function findBestDownloadableVideoCandidate() {
     return getVideos()
       .map(video => ({ video, score: scoreDownloadCandidate(video) }))
-      .filter(item => item.score >= 0)
+      .filter(item => item.score >= 0 && item.video.downloadable !== false && !item.video.isStream)
       .sort((a, b) => b.score - a.score)[0]?.video || null;
   }
 
@@ -839,14 +839,14 @@
     }
   }
 
-  function previewBlobVideo(rawSrc, title) {
+  function previewVideo(rawSrc, title) {
     const src = resolveVideoUrl(rawSrc);
-    if (!src || !isBlobVideoUrl(src)) {
-      return { ok: false, error: 'The selected video is not a page-scoped blob URL.' };
+    if (!src || !isVideoLikeUrl(src)) {
+      return { ok: false, error: 'The selected URL is not recognized as video.' };
     }
 
     const sourceVideo = findPageVideoElementForBlob(src);
-    if (sourceVideo && !sourceVideo.paused && typeof sourceVideo.captureStream === 'function') {
+    if (sourceVideo && typeof sourceVideo.captureStream === 'function') {
       const stream = sourceVideo.captureStream();
       if (stream && stream.getTracks().length > 0) {
         const preview = createVideoPreviewOverlay(title);
@@ -855,6 +855,14 @@
 
         return { ok: true, method: 'capture-stream' };
       }
+    }
+
+    if (!isBlobVideoUrl(src) && !isStreamUrl(src)) {
+      const preview = createVideoPreviewOverlay(title);
+      preview.video.src = src;
+      preview.video.poster = getPageThumbnailUrl() || '';
+      playPreviewVideo(preview.video);
+      return { ok: true, method: 'direct-url' };
     }
 
     const candidate = findBestDownloadableVideoCandidate();
@@ -867,8 +875,17 @@
 
     return {
       ok: false,
-      error: 'This blob is a transient MediaSource stream and no reusable video URL was found. Play the video, then Rescan.'
+      error: 'No reusable video preview source was found. Play the video, then Rescan.'
     };
+  }
+
+  function previewBlobVideo(rawSrc, title) {
+    const src = resolveVideoUrl(rawSrc);
+    if (!src || !isBlobVideoUrl(src)) {
+      return { ok: false, error: 'The selected video is not a page-scoped blob URL.' };
+    }
+
+    return previewVideo(src, title);
   }
 
   function clickDownloadLink(rawUrl, filename) {
@@ -936,10 +953,10 @@
     try {
       return await fetchAndDownloadVideo(src, filename);
     } catch (e) {
-      const linkResult = clickDownloadLink(src, filename);
       return {
-        ...linkResult,
-        warning: e.message || 'Page fetch failed; used link fallback.'
+        ok: false,
+        fallbackUrl: src,
+        error: e.message || 'Page fetch failed.'
       };
     }
   }
@@ -952,10 +969,14 @@
 
     const candidate = findBestDownloadableVideoCandidate();
     if (candidate?.src) {
-      return downloadVideoUrl(candidate.src, filename);
+      const result = await downloadVideoUrl(candidate.src, filename);
+      return result.ok ? result : { ...result, fallbackUrl: candidate.src };
     }
 
-    return clickDownloadLink(src, filename);
+    return {
+      ok: false,
+      error: 'No downloadable source was found for this blob video. Play the video, then Rescan.'
+    };
   }
 
   startVideoResourceObserver();
@@ -969,6 +990,8 @@
       sendResponse(getMedia());
     } else if (request.action === 'previewBlobVideo') {
       sendResponse(previewBlobVideo(request.src, request.title));
+    } else if (request.action === 'previewVideo') {
+      sendResponse(previewVideo(request.src, request.title));
     } else if (request.action === 'downloadBlobVideo') {
       downloadBlobVideo(request.src, request.filename)
         .then(sendResponse)
